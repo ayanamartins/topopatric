@@ -11,3 +11,6 @@ outputs
 *.exe
 *.out
 *.app
+
+#R outputs
+.Rhistory

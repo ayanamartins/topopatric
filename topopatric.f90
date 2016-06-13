@@ -16,7 +16,7 @@ integer(4) :: ntime,nc,mnpm,nb,radius
 real rg
 integer(4) nf,deltat,sampled_times,window,stable
 integer(4) iread,inis,inisbit
-real diff,mut,qmat,critG
+real diff,mut,m,critG
 logical independent_loci, is_dmi, discretegen
 
 !!Genotype and phenotype variables
@@ -67,6 +67,8 @@ integer(4) :: shuffle,shuffled
 integer(4), allocatable, save :: random_order(:)
 integer(4), allocatable:: auxx(:), auxy(:), auxg(:,:)
 
+logical, allocatable :: dead(:)
+
 !!Temporarily stores offspring genotype
 integer(1), allocatable :: goff(:,:)
 call cpu_time(start)
@@ -74,7 +76,7 @@ call cpu_time(start)
 !!Brief description of each parameter can be found in the input file
 open(unit=7,file='input.in',status='old',position='rewind')
     read(7,*) ntime,nc,nf,deltat
-    read(7,*) mut,diff,qmat,mnpm
+    read(7,*) mut,diff,m,mnpm
     read(7,*) radius,critG,nb, is_dmi
     read(7,*) iread,inis,inisbit, discretegen
     read(7,*) independent_loci,window,nsets,replica
@@ -144,6 +146,7 @@ simulation: do iparameter=1,nsets!change parameters
         allocate(noff(nc))
         allocate(Fst(nb),FstNull(nb))
         allocate(auxx(nc),auxy(nc),auxg(nc,nb))
+        allocate(dead(nc))
         
         !Set initial conditions of genotypes
         g = 0
@@ -174,6 +177,7 @@ simulation: do iparameter=1,nsets!change parameters
             id(k) = k
         end do
         
+        dead=.false.
         
         !Erase appendable output files
         filename = 'degree_distplot'//trim(simulationID)//'.dat'
@@ -205,17 +209,21 @@ simulation: do iparameter=1,nsets!change parameters
             noff = 0 !keep track of number of offspring per individual per generation
             goff = 0
             do k=1,nc
-                get_replacement = .false. !initially, we assume that this individual is going to repoduce
+                get_replacement = .false. !initially, we assume that this individual is going to reproduce
                 kmother = k
                 call findneig(kmother,radius)
-                !There is a random chance (qmat) that k is not going to reproduce.
-                !!!!! In this case, another inidividual will be choosen to reproduce in its place
+                !There is a random chance (m) that k is going to die and be replaced by the offspring
+                !! of a pair of individuals nearby
                 call random_number(random) 
-                if (random < qmat) get_replacement = .true.
+                if (random < m) then
+                    get_replacement = .true.
+                    dead(k) = .true.
+                end if
                 !Additionally, if k has not enough potential partners, it will also
                 !!!!! need to be replaced
                 if(ineighborg < mnpm .or. ineighborg == 0) then
                     get_replacement = .true.
+                    dead(k) = .true.
                 end if
                 this_radius = radius
                 this_neighbor = ineighbor
@@ -270,57 +278,60 @@ simulation: do iparameter=1,nsets!change parameters
                     end if
                 end do replace
                 ! If k has been replaced, find neighbors of the new kmother
-                if (k /= kmother) call findneig(kmother,radius)
+                if (kmother /= k) call findneig(kmother,radius)
                 if(ineighborg == 0) then
                     write(6,*) 'ineighborg = 0!'
                     write(6,*) 'This should not be possible here (ln408)'
                     exit simulation
                 end if
-                call random_number(aux)
-                kmate = neig(int(aux*ineighborg)+1)    ! get a kmate /= kmother
-                noff(kmother) = noff(kmother) + 1
-                noff(kmate) = noff(kmate) + 1
-                if(independent_loci) then
-                    do l=1,nb
-                        call random_number(aux)
-                        if (aux<0.5) then
-                            goff(k,l)=g(kmother,l)
-                        else
-                            goff(k,l)=g(kmate,l)
-                        end if
-                    end do
-                else
+                !Only replace the individual if it has died
+                if (dead(k)) then
                     call random_number(aux)
-                    kcross = int(aux*(nb-1))+1         ! crossover point
-                    call random_number(aux)
-                    if(aux < 0.5) then
-                        do l=1,kcross          ! copy first kcross bits of g(kmate) 
-                            goff(k,l) = g(kmate,l)  ! and last bits of g(kmother) into g(k)
-                        end do
-                        do l=kcross+1,nb        
-                            goff(k,l) = g(kmother,l)
+                    kmate = neig(int(aux*ineighborg)+1)    ! get a kmate /= kmother
+                    noff(kmother) = noff(kmother) + 1
+                    noff(kmate) = noff(kmate) + 1
+                    if(independent_loci) then
+                        do l=1,nb
+                            call random_number(aux)
+                            if (aux<0.5) then
+                                goff(k,l)=g(kmother,l)
+                            else
+                                goff(k,l)=g(kmate,l)
+                            end if
                         end do
                     else
-                        do l=1,kcross           ! copy first kcross bits of g(kmother) 
-                            goff(k,l) = g(kmother,l) ! and last bits of g(kmate) into g(k)
-                        end do
-                        do l=kcross+1,nb       
-                            goff(k,l) = g(kmate,l)
-                        end do
-                    end if
-                end if
-
-                if (.not. discretegen) then
-                    !Replacement of parental genome and mutation
-                    do l=1,nb
-                        g(k,l) = goff(k,l)
                         call random_number(aux)
-                        if(aux < mut) then
-                            g(k,l) = 1-g(k,l)
+                        kcross = int(aux*(nb-1))+1         ! crossover point
+                        call random_number(aux)
+                        if(aux < 0.5) then
+                            do l=1,kcross          ! copy first kcross bits of g(kmate) 
+                                goff(k,l) = g(kmate,l)  ! and last bits of g(kmother) into g(k)
+                            end do
+                            do l=kcross+1,nb        
+                                goff(k,l) = g(kmother,l)
+                            end do
+                        else
+                            do l=1,kcross           ! copy first kcross bits of g(kmother) 
+                                goff(k,l) = g(kmother,l) ! and last bits of g(kmate) into g(k)
+                            end do
+                            do l=kcross+1,nb       
+                                goff(k,l) = g(kmate,l)
+                            end do
                         end if
-                    end do
-                    !Dispersal
-                    if(diff /= 0.0) call dispersal(k)
+                    end if
+
+                    if (.not. discretegen) then
+                        !Replacement of parental genome and mutation
+                        do l=1,nb                    
+                            g(k,l) = goff(k,l)
+                            call random_number(aux)
+                            if(aux < mut) then
+                                g(k,l) = 1-g(k,l)
+                            end if
+                        end do
+                        !Dispersal
+                        if(diff /= 0.0) call dispersal(k)
+                    end if
                 end if
             end do  ! end matings of the season
             
@@ -328,14 +339,16 @@ simulation: do iparameter=1,nsets!change parameters
             !! only after the end of the mating season 
             if (discretegen) then
                 do k=1,nc
-                    do l=1,nb
-                        g(k,l) = goff(k,l)
-                        call random_number(aux)
-                        if(aux < mut) then
-                            g(k,l) = 1-g(k,l)
-                        end if
-                    end do
-                if(diff /= 0.0) call dispersal(k)
+                    if(dead(k)) then
+                        do l=1,nb
+                            g(k,l) = goff(k,l)
+                            call random_number(aux)
+                            if(aux < mut) then
+                                g(k,l) = 1-g(k,l)
+                            end if
+                        end do
+                        if(diff /= 0.0) call dispersal(k)
+                    end if
                 end do
             end if
             ! calculate species and other metrics every deltat
@@ -404,7 +417,7 @@ simulation: do iparameter=1,nsets!change parameters
 
         902 format(a15,1x,i15,1x,i15,1x,f15.5,1x,f15.2,1x,f15.2,1x,i15,1x,f15.2,1x,i15,1x,i15,1x,i15)
         open(unit=17,file='summary.dat',status='unknown', position='append')
-            write(17,902) simulationID,nc,nf,mut,diff,qmat,radius,rg,nb,stable,igt
+            write(17,902) simulationID,nc,nf,mut,diff,m,radius,rg,nb,stable,igt
         close(17)
         replica_igt(ireplica) = igt
         replica_stable(ireplica) = stable
@@ -432,7 +445,7 @@ simulation: do iparameter=1,nsets!change parameters
         filename = 'pop-'//trim(simulationID)//'.dat'
         open(unit=10,file=filename,status='unknown',position='rewind')
             write(10,*) iitime,nc,nf,deltat
-            write(10,*) mut,diff,qmat,mnpm
+            write(10,*) mut,diff,m,mnpm
             write(10,*)  radius,rg,nb, is_dmi
             write(10,*) iread,inis,inisbit,discretegen
             write(10,*) independent_loci,window,nsets,replica
@@ -452,11 +465,12 @@ simulation: do iparameter=1,nsets!change parameters
         deallocate(noff)
         deallocate(Fst, FstNull)
         deallocate(auxx,auxy,auxg)
+        deallocate(dead)
 
     end do !replica
 
     open(unit=18,file='summary_replica.dat',status='unknown', position='append')
-        write(18,903) nc,nf,mut,diff,qmat,radius,rg,nb,(replica_stable(i),i=1,replica),(replica_igt(j),j=1,replica)
+        write(18,903) nc,nf,mut,diff,m,radius,rg,nb,(replica_stable(i),i=1,replica),(replica_igt(j),j=1,replica)
     close(18)
     903 format(i15,1x,i15,1x,f15.5,1x,f15.2,1x,f15.2,1x,i15,1x,f15.2,1x,i15,1x,10i15,1x,10i15)
     deallocate (replica_igt, replica_stable)

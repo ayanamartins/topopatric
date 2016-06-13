@@ -8,8 +8,8 @@ Global Patterns of Speciation and Diversity. Nature 460, no. 7253: 384–87. doi
 of reproductively isolated groups occurs under certain conditions
 
 **General features:**
-Individuals are haploid and hermaphrodite
-Space is discrete (lattice)
+* Individuals are haploid and hermaphrodite
+* Space is discrete (lattice)
 
 ##Notable differences in relation to the Aguiar's version:
 
@@ -25,4 +25,4 @@ will only mate to others with identical genotypes
 2. input.in (input parameters)
 3. seed.in (should cotain one random seed for each model run)
 
-In addition, the file par.in is also required to run multiple parameters set in a single run.
+In addition, the file par.in is also required to run multiple parameter sets in a single run.

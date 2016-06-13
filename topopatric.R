@@ -10,7 +10,7 @@ color.function <- function(palette,n) colorRampPalette(palette)(n)
 
 ##List of parameters
 #T		N		NF		deltat
-#mut		diff		Qmat		MNPM
+#mut		diff		m		MNPM
 #S		G		B
 #IREAD		INIS		INISBIT         DMI
 #INDEPENDENT_LOCI window		nparameter       replica

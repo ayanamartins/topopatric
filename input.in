@@ -6,7 +6,7 @@
 
 
 T		N		L		deltat
-mu		D		Q		MNPM
+mu		D		m		MNPM
 S		G		B               DMI
 IREAD		INIS		INISBIT         discretegen
 independent_loci window		nparameter       replica
@@ -25,7 +25,7 @@ mu - mutation rate per locus per reproductive event
 D - dispersal rate (dispersal occurs with probability D to a random location
 within the area defined by S)
 
-Q - chance of individuals not reproducing
+m - mortality rate. Dead individuals will be replaced by newly born individuals
 
 MNPM - not implemented here
 
