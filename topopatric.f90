@@ -1,5 +1,5 @@
-! topopatric.f90 -- v0
-!Ayana B. Martins - 07/Jun/2016
+! topopatric.f90 -- v0.1
+!Ayana B. Martins - 13/Jun/2016
 
 module globals
 !!Loop variables
@@ -92,6 +92,14 @@ end if
 
 if (nsets > 1) open(unit=16,file='par.in',status='old',position='rewind')
 
+
+!Erase appendable output files
+open(unit=17,file='summary.dat',status='unknown')
+close(17, status='delete')
+
+open(unit=18,file='summary_replica.dat',status='unknown')
+close(18, status='delete')
+
 simulation: do iparameter=1,nsets!change parameters
 
     allocate (replica_igt(replica),replica_stable(replica))
@@ -165,7 +173,25 @@ simulation: do iparameter=1,nsets!change parameters
         do k=1,nc
             id(k) = k
         end do
-
+        
+        
+        !Erase appendable output files
+        filename = 'degree_distplot'//trim(simulationID)//'.dat'
+        open(unit=19,file=filename,status='unknown')
+        close(19, status='delete')
+        
+        filename = 'Fst'//trim(simulationID)//'.dat'
+        open(unit=20,file=filename,status='unknown')
+        close(20, status='delete')
+        
+        filename = 'FstNull'//trim(simulationID)//'.dat'
+        open(unit=21,file=filename,status='unknown')
+        close(21, status='delete')
+        
+        filename = 'dist'//trim(simulationID)//'.dat'
+        open(unit=22,file=filename,status='unknown')
+        close(22, status='delete')
+        
         ! Initialize time variable
         iitime = 0
 
@@ -322,7 +348,10 @@ simulation: do iparameter=1,nsets!change parameters
                 else
                     write(6,*) itime,itime+iitime,nc,igt,(ispv(k),k=1,4),'...'
                 end if
-                call is_stable
+                filename = 'dist'//trim(simulationID)//'.dat'
+                open(unit=22,file=filename,status='unknown', position='append')
+                    call is_stable
+                close(22)
                 if(itime==ntime) then
                     keep_going=.false.
                     stable = 0
@@ -400,7 +429,7 @@ simulation: do iparameter=1,nsets!change parameters
         close(9)
 
         901 format(i4,1x,i4,1x,1000i1)
-        filename = 'pop-'//trim(simulationID)
+        filename = 'pop-'//trim(simulationID)//'.dat'
         open(unit=10,file=filename,status='unknown',position='rewind')
             write(10,*) iitime,nc,nf,deltat
             write(10,*) mut,diff,qmat,mnpm
@@ -830,6 +859,7 @@ do i=1,nc
         do k=1,nb
             dist = dist + abs(g(i,k)-g(j,k))
         end do
+        write(22,*) dist
         distsum = distsum + dist
     end do
 end do

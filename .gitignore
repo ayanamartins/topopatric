@@ -1,3 +1,6 @@
+#Folders
+outputs
+
 # Fortran module files
 *.mod
 
