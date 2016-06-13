@@ -3,7 +3,7 @@
 
 module globals
 !!Loop variables
-integer(4) i,j,k,l 
+integer(4) i,j,k,l,o 
 logical keep_going
 integer(4), allocatable :: id(:)
 
@@ -355,7 +355,7 @@ simulation: do iparameter=1,nsets!change parameters
             check_time = (float(itime)/float(deltat) - itime/deltat)
             if (check_time == 0.0) then
                 sampled_times=sampled_times+1
-                call findspecies
+                call findspecies         
                 if (igt < 5) then
                     write(6,*) itime,itime+iitime,nc,igt,(ispv(k),k=1,igt)
                 else
@@ -385,28 +385,30 @@ simulation: do iparameter=1,nsets!change parameters
                     close(21)
                 end if
             end if
-            !Shuffle indexes so that individuals reproduce in random order
-            do k=nc,1,-1
-                call random_number(aux)
-                shuffle = int(aux*(nc-1))+1
-                shuffled = id(k)
-                id(k) = id(shuffle)
-                id(shuffle) = shuffled
-            end do
-            do k=1,nc
-                auxx(k) = x(k)
-                auxy(k) = y(k)
-                do l=1,nb
-                    auxg(k,l) = g(k,l)
+            if (keep_going) then
+                !Shuffle indexes so that individuals reproduce in random order
+                do k=nc,1,-1
+                    call random_number(aux)
+                    shuffle = int(aux*(nc-1))+1
+                    shuffled = id(k)
+                    id(k) = id(shuffle)
+                    id(shuffle) = shuffled
                 end do
-            end do
-            do k=1,nc
-                x(k) = auxx(id(k))
-                y(k) = auxy(id(k))
-                do l=1,nb
-                    g(k,l) = auxg(id(k),l)
+                do k=1,nc
+                    auxx(k) = x(k)
+                    auxy(k) = y(k)
+                    do l=1,nb
+                        auxg(k,l) = g(k,l)
+                    end do
                 end do
-            end do           
+                do k=1,nc
+                    x(k) = auxx(id(k))
+                    y(k) = auxy(id(k))
+                    do l=1,nb
+                        g(k,l) = auxg(id(k),l)
+                    end do
+                end do
+            end if
         end do looptime ! loop in time
 
         if (stable /= 0) then
@@ -424,10 +426,10 @@ simulation: do iparameter=1,nsets!change parameters
         filename = 'speciesplot'//trim(simulationID)//'.dat'
         open(unit=8,file=filename,status='unknown')
             do i=1,igt
-            j = ispv(i)
+                j = ispv(i)
                 do k=1,j
                     l = ispecies(i,k)
-                    write(8,*) x(l),y(l),i
+                    write(8,*) x(l),y(l),i, (g(l,o),o=1,nb)
                 end do
             end do
         close(8)
@@ -563,7 +565,7 @@ subroutine findspecies
 use globals, only: i,j,k,l,x,y,nc,rg,g,nb,igt,ispecies,ispv,is_dmi
 implicit none
 integer(4), allocatable :: species(:), auxy1(:),auxy2(:)
-integer(4) itot,i1,i2,icr,isp,dista,itest,isp0,ispold,ii,ji
+integer(4) itot,i1,i2,icr,isp,dista,itest,isp0,ispold,ii,ji,o
 
 allocate (species(nc),auxy1(nc),auxy2(nc))
 
@@ -636,10 +638,10 @@ do while (itot < nc)
             ispold = isp0
         end do
     end if
-    if (isp == 0) then
-    isp = 1
-    species(isp) = auxy2(i)
-    end if
+    !if (isp == 0) then
+    !isp = 1
+    !species(isp) = auxy2(i)
+    !end if
     itot = itot + isp    !total number of individuals classified into species
     igt = igt + 1        !number of species
     ! save species info

@@ -51,8 +51,8 @@ saveGIF({
          xlim=c(0,1000), ylim = c(0,10), pch=19)
     fit = lm(degree[(i-999):i,2] ~ degree[(i-999):i,1])
     color = "blue"
-    if(i > 2*N) if(fit$coefficients[2] < 0) color = "red"
-    if(i > 2*N) abline(fit,lwd=1.5,lty=2,col=color)
+    if(i > 5*N) if(fit$coefficients[2] < 0) color = "red"
+    if(i > 5*N) abline(fit,lwd=1.5,lty=2,col=color)
     text(900,10,"fit = ax+b")
     text(900,9,paste("a=",round(fit$coefficients[2],5), sep=''),col=color)
   }
@@ -65,9 +65,10 @@ dev.off()
 #Calculate the threshold for Fst outliers
 fstNull <- read.table("FstNullSIM001.001.dat")
 hist(as.numeric(fstNull[1,]))
-outlier <- tail(sort(as.numeric(fstNull[1,])),(length(fstNull[1,])*0.05))[1]
+outlier <- tail(sort(as.numeric(fstNull[1,])),(length(fstNull[1,])*0.01))[1]
 #Plot Fst values along the genotype
 fst <- read.table("FstSIM001.001.dat")
+hist(as.numeric(fst[1,]))
 plot(seq(1,B),fst[1,1:B],pch=19, xlab="position in genome", ylab="Fst")
 abline(h=outlier,lty=2)
 
@@ -80,9 +81,9 @@ filesize <- dim(dist)[1]
 saveGIF({
   for (i in seq(nvalues,filesize,nvalues))
   {
-    hist(sample(dist[(i-(nvalues-1)):i,1],5000), xlab="genetic distance",
+    hist(sample(dist[(i-(nvalues-1)):i,1],10000), xlab="genetic distance", breaks=B,
          main = paste(paste(paste('mating area(%) = ',relativeS,sep=''),', T = ',sep=''),(i/nvalues)*deltat, sep=''),
-         col="gray")
+         col="gray", xlim=c(0,B))
   }
 })
 
@@ -93,5 +94,3 @@ speciesplot <- read.table('speciesplotSIM001.001.dat')
 nspecies <- max(speciesplot$V3)
 sspcolors <- color.function(colors, nspecies)
 plot(speciesplot$V1, speciesplot$V2, col=sspcolors[speciesplot$V3], pch=16, cex=1.1, axes=FALSE,asp=1, xlab="", ylab="")
-
-

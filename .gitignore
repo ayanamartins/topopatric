@@ -14,3 +14,5 @@ outputs
 
 #R outputs
 .Rhistory
+.Rproj.user
+*.Rproj
