@@ -1,5 +1,5 @@
-! topopatric.f90 -- v0.1
-!Ayana B. Martins - 13/Jun/2016
+! topopatric.f90 -- v0.2
+!Ayana B. Martins - 16/Jun/2016
 
 module globals
 !!Loop variables
@@ -21,6 +21,7 @@ logical independent_loci, is_dmi, discretegen
 
 !!Genotype and phenotype variables
 integer(1), allocatable :: g(:,:)
+integer(1), allocatable :: markers(:,:)
 
 !!Space and neighbor variables
 integer(4), allocatable :: x(:),y(:)
@@ -65,12 +66,13 @@ real isum
 
 integer(4) :: shuffle,shuffled
 integer(4), allocatable, save :: random_order(:)
-integer(4), allocatable:: auxx(:), auxy(:), auxg(:,:)
+integer(4), allocatable:: auxx(:), auxy(:), auxg(:,:), auxm(:,:)
 
 logical, allocatable :: dead(:)
 
 !!Temporarily stores offspring genotype
 integer(1), allocatable :: goff(:,:)
+integer(1), allocatable :: moff(:,:)
 call cpu_time(start)
 ! Read input data
 !!Brief description of each parameter can be found in the input file
@@ -138,23 +140,28 @@ simulation: do iparameter=1,nsets!change parameters
 
         !Start a new simulation
         allocate(id(nc))
-        allocate (g(nc,nb),goff(nc,nb))
+        allocate (g(nc,nb),markers(nc,nb))
+        allocate (goff(nc,nb), moff(nc,nb))
         allocate(x(nc),y(nc),neig(nc),neigsp(nc))
         allocate (ispv(nc),ispecies(nc,nc))
         allocate(previous_igt(ntime),previous_gdists(ntime))
         allocate(random_order(nc))
         allocate(noff(nc))
         allocate(Fst(nb),FstNull(nb))
-        allocate(auxx(nc),auxy(nc),auxg(nc,nb))
+        allocate(auxx(nc),auxy(nc),auxg(nc,nb),auxm(nc,nb))
         allocate(dead(nc))
         
         !Set initial conditions of genotypes
         g = 0
+        markers = 0
         if(inisbit /= 0) then !random genomes
             do k=1,nc                    
                 do i=1,nb
                     call random_number(aux)
                     if(aux > 0.5) g(k,i) = 1
+                    !markers are also random
+                    call random_number(aux)
+                    if(aux > 0.5) markers(k,i) = 1
                 end do
             end do
         end if
@@ -208,6 +215,7 @@ simulation: do iparameter=1,nsets!change parameters
             !Mating
             noff = 0 !keep track of number of offspring per individual per generation
             goff = 0
+            moff = 0
             do k=1,nc
                 get_replacement = .false. !initially, we assume that this individual is going to reproduce
                 kmother = k
@@ -299,6 +307,14 @@ simulation: do iparameter=1,nsets!change parameters
                                 goff(k,l)=g(kmate,l)
                             end if
                         end do
+                        do l=1,nb
+                            call random_number(aux)
+                            if (aux<0.5) then
+                                moff(k,l)=markers(kmother,l)
+                            else
+                                moff(k,l)=markers(kmate,l)
+                            end if
+                        end do
                     else
                         call random_number(aux)
                         kcross = int(aux*(nb-1))+1         ! crossover point
@@ -329,6 +345,13 @@ simulation: do iparameter=1,nsets!change parameters
                                 g(k,l) = 1-g(k,l)
                             end if
                         end do
+                        do l=1,nb                    
+                            markers(k,l) = moff(k,l)
+                            call random_number(aux)
+                            if(aux < mut) then
+                                markers(k,l) = 1-markers(k,l)
+                            end if
+                        end do
                         !Dispersal
                         if(diff /= 0.0) call dispersal(k)
                     end if
@@ -345,6 +368,13 @@ simulation: do iparameter=1,nsets!change parameters
                             call random_number(aux)
                             if(aux < mut) then
                                 g(k,l) = 1-g(k,l)
+                            end if
+                        end do
+                        do l=1,nb
+                            markers(k,l) = moff(k,l)
+                            call random_number(aux)
+                            if(aux < mut) then
+                                markers(k,l) = 1-markers(k,l)
                             end if
                         end do
                         if(diff /= 0.0) call dispersal(k)
@@ -384,6 +414,8 @@ simulation: do iparameter=1,nsets!change parameters
                     close(20)
                     close(21)
                 end if
+            else
+                !write(6,*) itime,itime+iitime
             end if
             if (keep_going) then
                 !Shuffle indexes so that individuals reproduce in random order
@@ -399,6 +431,7 @@ simulation: do iparameter=1,nsets!change parameters
                     auxy(k) = y(k)
                     do l=1,nb
                         auxg(k,l) = g(k,l)
+                        auxm(k,l) = markers(k,l)
                     end do
                 end do
                 do k=1,nc
@@ -406,6 +439,7 @@ simulation: do iparameter=1,nsets!change parameters
                     y(k) = auxy(id(k))
                     do l=1,nb
                         g(k,l) = auxg(id(k),l)
+                        markers(k,l) = auxm(id(k),l)
                     end do
                 end do
             end if
@@ -429,7 +463,7 @@ simulation: do iparameter=1,nsets!change parameters
                 j = ispv(i)
                 do k=1,j
                     l = ispecies(i,k)
-                    write(8,*) x(l),y(l),i, (g(l,o),o=1,nb)
+                    write(8,*) x(l),y(l),i, (g(l,o),o=1,nb), (markers(l,o),o=1,nb)
                 end do
             end do
         close(8)
@@ -458,7 +492,7 @@ simulation: do iparameter=1,nsets!change parameters
         close(10)
 
         deallocate(id)
-        deallocate (g,goff)
+        deallocate (g,goff,markers,moff)
         deallocate(x,y,neig,neigsp)
         deallocate (ispv,ispecies)
         deallocate(previous_igt,previous_gdists)
@@ -466,7 +500,7 @@ simulation: do iparameter=1,nsets!change parameters
         deallocate(random_order)
         deallocate(noff)
         deallocate(Fst, FstNull)
-        deallocate(auxx,auxy,auxg)
+        deallocate(auxx,auxy,auxg,auxm)
         deallocate(dead)
 
     end do !replica

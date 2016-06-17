@@ -94,3 +94,38 @@ speciesplot <- read.table('speciesplotSIM001.001.dat')
 nspecies <- max(speciesplot$V3)
 sspcolors <- color.function(colors, nspecies)
 plot(speciesplot$V1, speciesplot$V2, col=sspcolors[speciesplot$V3], pch=16, cex=1.1, axes=FALSE,asp=1, xlab="", ylab="")
+
+ssp1g <- (speciesplot[which(speciesplot[,3]==1),4:1003])
+ssp2g <- (speciesplot[which(speciesplot[,3]==2),4:1003])
+ssp3g <- (speciesplot[which(speciesplot[,3]==3),4:1003])
+ssp1m <- (speciesplot[which(speciesplot[,3]==1),1004:2003])
+ssp2m <- (speciesplot[which(speciesplot[,3]==2),1004:2003])
+ssp3m <- (speciesplot[which(speciesplot[,3]==3),1004:2003])
+
+
+hist(rowSums(ssp2m),xlim=c(50,150),col="gray",ylim=c(0,50))
+hist(rowSums(ssp2g), col="blue",add=TRUE)
+
+ssp1gP <- colSums(ssp1g)/dim(ssp1g)[1]
+length(which(ssp1gP == 0 | ssp1gP == 1))
+ssp1mP <- colSums(ssp1m)/dim(ssp1m)[1]
+length(which(ssp1mP == 0 | ssp1mP == 1))
+
+ssp2gP <- colSums(ssp2g)/dim(ssp2g)[1]
+Pn <- length(which(ssp2gP == 0 | ssp2gP == 1))
+ssp2mP <- colSums(ssp2m)/dim(ssp2m)[1]
+Ps <- length(which(ssp2mP == 0 | ssp2mP == 1))
+
+ssp3gP <- colSums(ssp3g)/dim(ssp3g)[1]
+length(which(ssp3gP == 0 | ssp3gP == 1))
+ssp3mP <- colSums(ssp3m)/dim(ssp3m)[1]
+length(which(ssp3mP == 0 | ssp3mP == 1))
+
+Dn <- length(which(abs(ssp2gP - ssp3gP) == 1))
+Ds <- length(which(abs(ssp2mP - ssp3mP) == 1))
+
+(Pn/Ps)/(Dn/Ds)
+
+hist(test, add=TRUE, col="blue")
+test2 <- rowSums(speciesplot[which(speciesplot[,3]==1),1004:2003])
+hist(test2, col="gray" )
