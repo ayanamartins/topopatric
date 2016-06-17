@@ -16,4 +16,4 @@ outputs
 .Rhistory
 .Rproj.user
 *.Rproj
-*.Rdata
+*.RData
