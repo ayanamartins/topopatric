@@ -1,5 +1,6 @@
 ! topopatric.f90 -- v0.2
-!Ayana B. Martins - 16/Jun/2016
+! panmictic -- v0
+!Ayana B. Martins - 17/Jun/2016
 
 module globals
 !!Loop variables
