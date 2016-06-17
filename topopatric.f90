@@ -13,7 +13,7 @@ real:: start, finish
 integer(4) hours, minutes,seconds
 
 !!Input variables
-integer(4) :: ntime,nc,mnpm,nb,radius
+integer(4) :: ntime,nc,mnpm,nb,radius,ntrials
 real rg
 integer(4) nf,deltat,sampled_times,window,stable
 integer(4) iread,inis,inisbit
@@ -24,13 +24,9 @@ logical independent_loci, is_dmi, discretegen
 integer(1), allocatable :: g(:,:)
 integer(1), allocatable :: markers(:,:)
 
-!!Space and neighbor variables
-integer(4), allocatable :: x(:),y(:)
-integer(4), allocatable :: neig(:),neigsp(:),ispecies(:,:)
-integer(4)  ineighbor,ineighborg,this_radius
-
 !Species detection variables
 integer(4) igt
+integer(4), allocatable :: ispecies(:,:)
 integer(4), allocatable :: ispv(:)
 integer(4), allocatable :: previous_igt(:)
 real, allocatable:: previous_gdists(:)
@@ -61,9 +57,13 @@ integer(4), allocatable :: replica_igt(:), replica_stable(:)
 integer, dimension(:), allocatable :: iseed
 integer :: nseed
 
-integer(4) candidate,this_neighbor
+integer(4) candidate
 logical get_replacement
 real isum
+
+integer(4) trials
+
+integer(4) check
 
 integer(4) :: shuffle,shuffled
 integer(4), allocatable, save :: random_order(:)
@@ -87,7 +87,9 @@ close(7)
 open(unit=50,file='seed.in',status='old')  
 
 !Absolute threshold is calculated from relative input
-rg=nint(nb*critG)
+rg=100
+
+ntrials = nc
 
 if (mnpm /= 0) then
 	write(6,*) 'Maybe you forgot that this version cannot handle the mnpm rule?'
@@ -143,13 +145,12 @@ simulation: do iparameter=1,nsets!change parameters
         allocate(id(nc))
         allocate (g(nc,nb),markers(nc,nb))
         allocate (goff(nc,nb), moff(nc,nb))
-        allocate(x(nc),y(nc),neig(nc),neigsp(nc))
         allocate (ispv(nc),ispecies(nc,nc))
         allocate(previous_igt(ntime),previous_gdists(ntime))
         allocate(random_order(nc))
         allocate(noff(nc))
         allocate(Fst(nb),FstNull(nb))
-        allocate(auxx(nc),auxy(nc),auxg(nc,nb),auxm(nc,nb))
+        allocate(auxg(nc,nb),auxm(nc,nb))
         allocate(dead(nc))
         
         !Set initial conditions of genotypes
@@ -166,19 +167,6 @@ simulation: do iparameter=1,nsets!change parameters
                 end do
             end do
         end if
-
-        !Set initial location of individuals
-        do i=1,nc
-            if(inis == 0) then  !random position
-                call random_number(aux)
-                x(i) = int(aux*nf)+1
-                call random_number(aux)
-                y(i) = int(aux*nf)+1
-             else !localized at the center
-                x(i) = nf/2   
-                y(i) = nf/2
-             end if
-        end do
 
         !Initialize individual's ids
         do k=1,nc
@@ -220,107 +208,79 @@ simulation: do iparameter=1,nsets!change parameters
             do k=1,nc
                 get_replacement = .false. !initially, we assume that this individual is going to reproduce
                 kmother = k
-                call findneig(kmother,radius)
                 !There is a random chance (m) that k is going to die and be replaced by the offspring
                 !! of a pair of individuals nearby
                 call random_number(random) 
                 if (random < m) then
                     get_replacement = .true.
                     dead(k) = .true.
-                end if
-                !Additionally, if k has not enough potential partners, it will also
-                !!!!! need to be replaced
-                if(ineighborg < mnpm .or. ineighborg == 0) then
-                    get_replacement = .true.
-                    dead(k) = .true.
-                end if
-                this_radius = radius
-                this_neighbor = ineighbor
-                !If necessary, find a candidate to replace k
-                replace: do while (get_replacement)
-                    ! k's neighbors are the first set of candidates
-                    !!! Arrange neighbors in a random order
-                    do i=1,ineighbor
-                        random_order(i) = neigsp(i)
-                    end do
-                    do i=ineighbor,1,-1
-                        call random_number(random)
-                        shuffle = int(random*(ineighbor-1))+1
-                        shuffled = random_order(i)
-                        random_order(i) = random_order(shuffle)
-                        random_order(shuffle) = shuffled
-                    end do
-                    !Sucessively check if each neighbor is a suitable candidate
-                    do i=1,ineighbor
-                        candidate = random_order(i)
-                        !check_ineighborg = 0 !necessary if using mnpm
-                        ix = x(candidate)
-                        iy = y(candidate)
-                        check: do j = 1,nc !check if candidate is going to be able to reproduce
-                            if(candidate == j) cycle check
-                            dista = sqrt(real(min(abs(ix-x(j)), nf - abs(ix-x(j)))**2 + min(abs(iy-y(j)), nf - abs(iy-y(j)))**2))
-                            if (dista <= radius) then
-                                dista = 0
-                                do l=1,nb
-                                    if(is_dmi) then
-                                        if (g(candidate,l) + g(j,l) > 0) dista = dista + 1
-                                        if(dista > rg) exit
-                                    else
-                                        dista = dista + abs(g(candidate,l)-g(j,l))
-                                        if(dista > rg) exit
-                                    end if
-                                end do
-                                if(dista <= rg) then
-                                    kmother = candidate
-                                    get_replacement = .false.
-                                    exit replace ! if this candidate is accepted, the search stops
-                                end if
-                            end if
-                        end do check
-                    end do !end of neighbor loop
-                                    
-                    !If all none of the neighbors is a suitable candidate,
-                    !! increase radius of spatial neighborhood by 1
-                    if (k==kmother) then
-                        this_radius = this_radius + 1
-                        call findneig(k, this_radius)
-                    end if
-                end do replace
-                ! If k has been replaced, find neighbors of the new kmother
-                if (kmother /= k) call findneig(kmother,radius)
-                if(ineighborg == 0) then
-                    write(6,*) 'ineighborg = 0!'
-                    write(6,*) 'This should not be possible here (ln408)'
-                    exit simulation
+                    call random_number(random)
+                    kmother = int(random*nc)+1                    
                 end if
                 !Only replace the individual if it has died
+                kmate = 0
                 if (dead(k)) then
-                    call random_number(aux)
-                    kmate = neig(int(aux*ineighborg)+1)    ! get a kmate /= kmother
+                    666 trials = 0
+                    searchpop: do while (trials < ntrials)
+                        trials = trials + 1   
+                        call random_number(random)
+                        candidate = int(random*nc)+1  
+                        if(candidate == k) then
+                            trials = trials -1
+                            cycle searchpop !don't mate with the dead D:
+                        end if
+                        if(candidate == kmother) then
+                            trials = trials - 1
+                            cycle searchpop !no self-fertilization                            
+                        end if
+                        dista = 0
+                        do l=1,nb
+                            if(is_dmi) then
+                                if (g(kmother,l) + g(i,l) > 0) dista = dista + 1
+                                if(dista > rg) exit
+                            else
+                                dista = dista + abs(g(kmother,l)-g(i,l))
+                                if(dista > rg) exit
+                            end if
+                        end do
+                        if(dista <= rg) then
+                            kmate = candidate
+                            exit searchpop
+                        end if
+                    end do searchpop
+                    if (kmate == 0) then
+                        write(6,*) 'Oh, not! Forever alone', dista
+                        call random_number(random)
+                        kmother = int(random*nc)+1
+                        write(6,*) kmother
+                        go to 666
+                    end if
+
                     noff(kmother) = noff(kmother) + 1
                     noff(kmate) = noff(kmate) + 1
+                    !Generate offspring                
                     if(independent_loci) then
                         do l=1,nb
-                            call random_number(aux)
-                            if (aux<0.5) then
+                            call random_number(random)
+                            if (random<0.5) then
                                 goff(k,l)=g(kmother,l)
                             else
                                 goff(k,l)=g(kmate,l)
                             end if
                         end do
                         do l=1,nb
-                            call random_number(aux)
-                            if (aux<0.5) then
+                            call random_number(random)
+                            if (random<0.5) then
                                 moff(k,l)=markers(kmother,l)
                             else
                                 moff(k,l)=markers(kmate,l)
                             end if
                         end do
                     else
-                        call random_number(aux)
-                        kcross = int(aux*(nb-1))+1         ! crossover point
-                        call random_number(aux)
-                        if(aux < 0.5) then
+                        call random_number(random)
+                        kcross = int(random*(nb-1))+1         ! crossover point
+                        call random_number(random)
+                        if(random < 0.5) then
                             do l=1,kcross          ! copy first kcross bits of g(kmate) 
                                 goff(k,l) = g(kmate,l)  ! and last bits of g(kmother) into g(k)
                             end do
@@ -353,8 +313,6 @@ simulation: do iparameter=1,nsets!change parameters
                                 markers(k,l) = 1-markers(k,l)
                             end if
                         end do
-                        !Dispersal
-                        if(diff /= 0.0) call dispersal(k)
                     end if
                 end if
             end do  ! end matings of the season
@@ -378,7 +336,6 @@ simulation: do iparameter=1,nsets!change parameters
                                 markers(k,l) = 1-markers(k,l)
                             end if
                         end do
-                        if(diff /= 0.0) call dispersal(k)
                     end if
                 end do
             end if
@@ -392,31 +349,39 @@ simulation: do iparameter=1,nsets!change parameters
                 else
                     write(6,*) itime,itime+iitime,nc,igt,(ispv(k),k=1,4),'...'
                 end if
-                filename = 'dist'//trim(simulationID)//'.dat'
-                open(unit=22,file=filename,status='unknown', position='append')
-                    call is_stable
-                close(22)
-                if(itime==ntime) then
-                    keep_going=.false.
-                    stable = 0
+                check = 0
+                if (igt > 1) then                    
+                    do i=1,igt
+                        if (ispv(i) > 20) check = check + 1
+                    end do
                 end if
-                !Calculate the number of potential partners for each individual
-                filename = 'degree_distplot'//trim(simulationID)//'.dat'
-                open(unit=19,file=filename,status='unknown', position='append')
-                    call degree_dist
-                close(19)
-                !Calculate Fst and generare a list to calculate the 95% confidence interval
-                if (igt > 1) then
-                    filename = 'Fst'//trim(simulationID)//'.dat'
-                    open(unit=20,file=filename,status='unknown',position='append')
-                    filename = 'FstNull'//trim(simulationID)//'.dat'
-                    open(unit=21,file=filename,status='unknown',position='append')
-                        call calcfst
-                    close(20)
-                    close(21)
+                if (check > 2) then
+                    filename = 'dist'//trim(simulationID)//'.dat'
+                    open(unit=22,file=filename,status='unknown', position='append')
+                        call is_stable
+                    close(22)
+                    if(itime==ntime) then
+                        keep_going=.false.
+                        stable = 0
+                    end if
+                    !Calculate the number of potential partners for each individual
+                    filename = 'degree_distplot'//trim(simulationID)//'.dat'
+                    open(unit=19,file=filename,status='unknown', position='append')
+                        call degree_dist
+                    close(19)
+                    !Calculate Fst and generare a list to calculate the 95% confidence interval
+                    if (igt > 1) then
+                        filename = 'Fst'//trim(simulationID)//'.dat'
+                        open(unit=20,file=filename,status='unknown',position='append')
+                        filename = 'FstNull'//trim(simulationID)//'.dat'
+                        open(unit=21,file=filename,status='unknown',position='append')
+                            call calcfst
+                        close(20)
+                        close(21)
+                    end if
                 end if
             else
-                !write(6,*) itime,itime+iitime
+                write(6,*) itime,itime+iitime
             end if
             if (keep_going) then
                 !Shuffle indexes so that individuals reproduce in random order
@@ -428,16 +393,12 @@ simulation: do iparameter=1,nsets!change parameters
                     id(shuffle) = shuffled
                 end do
                 do k=1,nc
-                    auxx(k) = x(k)
-                    auxy(k) = y(k)
                     do l=1,nb
                         auxg(k,l) = g(k,l)
                         auxm(k,l) = markers(k,l)
                     end do
                 end do
                 do k=1,nc
-                    x(k) = auxx(id(k))
-                    y(k) = auxy(id(k))
                     do l=1,nb
                         g(k,l) = auxg(id(k),l)
                         markers(k,l) = auxm(id(k),l)
@@ -464,7 +425,7 @@ simulation: do iparameter=1,nsets!change parameters
                 j = ispv(i)
                 do k=1,j
                     l = ispecies(i,k)
-                    write(8,*) x(l),y(l),i, (g(l,o),o=1,nb), (markers(l,o),o=1,nb)
+                    write(8,*) i, (g(l,o),o=1,nb), (markers(l,o),o=1,nb)
                 end do
             end do
         close(8)
@@ -487,21 +448,20 @@ simulation: do iparameter=1,nsets!change parameters
             write(10,*) iread,inis,inisbit,discretegen
             write(10,*) independent_loci,window,nsets,replica
             do i=1,nc
-                write (10,901) x(i),y(i),(g(i,j),j=1,nb)
+                write (10,901) (g(i,j),j=1,nb)
             end do
             write(10,*) iseed
         close(10)
 
         deallocate(id)
         deallocate (g,goff,markers,moff)
-        deallocate(x,y,neig,neigsp)
         deallocate (ispv,ispecies)
         deallocate(previous_igt,previous_gdists)
         deallocate(iseed)
         deallocate(random_order)
         deallocate(noff)
         deallocate(Fst, FstNull)
-        deallocate(auxx,auxy,auxg,auxm)
+        deallocate(auxg,auxm)
         deallocate(dead)
 
     end do !replica
@@ -523,81 +483,11 @@ call ellapsed_time
 
 end program topopatric
 
-!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-! Find spatial and genetic neighbors for kmother                                             !
-!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-subroutine findneig(this_k, this_radius)
-use globals, only: i,nc,l,nb,ineighbor,ineighborg,neig,neigsp,x,y,g,rg,nf,is_dmi
-implicit none
-integer(4), intent(in) :: this_k, this_radius
-integer(4) dista,ix,iy
-
-ineighbor = 0
-ineighborg = 0
-neig = 0   ! genetic neighbors
-neigsp = 0 ! spatial neighbors
-ix = x(this_k)
-iy = y(this_k)
-searchpop: do i = 1,nc
-    if(this_k == i) cycle searchpop
-    dista = sqrt(real(min(abs(ix-x(i)), nf - abs(ix-x(i)))**2 + min(abs(iy-y(i)), nf - abs(iy-y(i)))**2))
-    if (dista <= this_radius) then
-        ineighbor = ineighbor + 1
-        neigsp(ineighbor) = i
-        dista = 0
-        do l=1,nb
-            if(is_dmi) then
-                if (g(this_k,l) + g(neigsp(ineighbor),l) > 0) dista = dista + 1
-                if(dista > rg) exit
-            else
-                dista = dista + abs(g(this_k,l)-g(neigsp(ineighbor),l))
-                if(dista > rg) exit
-            end if
-        end do
-        if(dista <= rg) then
-            ineighborg = ineighborg + 1
-            neig(ineighborg) = neigsp(ineighbor)
-        end if
-    end if
-end do searchpop
-
-end
-
-!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-! Dispersal                                     !
-!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-subroutine dispersal(k)
-use globals, only:nf,diff,x,y,radius
-implicit none
-integer(4), intent(in) :: k
-integer(4) iix,iiy
-real random, jump, turn , pi
-
-pi = 3.141593
-call random_number(random)
-if(random < diff) then
-    ! calculate new position
-    call random_number(random)
-    jump = radius*random
-    call random_number(random)
-    turn = 2*random*pi
-    iix = x(k)+nint(cos(turn)*jump)
-    iiy = y(k)+nint(sin(turn)*jump)
-    if (iix < 1 ) iix = iix + nf
-    if (iiy < 1 ) iiy = iiy + nf
-    if (iix > nf ) iix = iix - nf
-    if (iiy > nf ) iiy = iiy - nf
-    x(k) = iix
-    y(k) = iiy
-end if
-
-end
-
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 ! Find species                                  !
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 subroutine findspecies
-use globals, only: i,j,k,l,x,y,nc,rg,g,nb,igt,ispecies,ispv,is_dmi
+use globals, only: i,j,k,l,nc,rg,g,nb,igt,ispecies,ispv,is_dmi
 implicit none
 integer(4), allocatable :: species(:), auxy1(:),auxy2(:)
 integer(4) itot,i1,i2,icr,isp,dista,itest,isp0,ispold,ii,ji,o
@@ -721,7 +611,7 @@ end
 ! Calculate Fst for n subpopulations            !
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 subroutine calcfst
-use globals, only:i,j,k,l,x,y,nf,g,nc,nb,Fst,igt,ispv,ispecies
+use globals, only:i,j,k,l,g,nc,nb,Fst,igt,ispv,ispecies
 implicit none
 real, allocatable:: freqs(:,:),Hs(:,:)
 integer(4) dimH, shuffle, shuffled, ini, fin
@@ -825,69 +715,6 @@ write(21,*) (Fst(l),l=1,nb)
 deallocate(freqs,Hs)
 deallocate(randomized)
 
-!! First implemented comparing groups in space
-!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!1
-! integer(4), allocatable:: nsub(:)
-! integer(4), allocatable:: subpops(:,:)
-! real, allocatable:: freqs(:,:),Hs(:,:)
-! integer(4) division, limit
-! 
-! allocate(subpops(4,nc))
-! allocate(nsub(4))
-! allocate(freqs(5,nb),Hs(5,nb))
-! division = 2
-! limit = nf/division
-! 
-! freqs = 0
-! nsub = 0
-! do k=1,nc
-!         if (x(k) > limit .and. y(k) > limit) then
-!             nsub(1) = nsub(1) + 1
-!             subpops(1,nsub(1)) = k
-!         else if (x(k) <= limit .and. y(k) > limit) then
-!             nsub(2) = nsub(2) + 1
-!             subpops(2,nsub(2)) = k
-!         else if (x(k) <= limit .and. y(k) <= limit) then
-!             nsub(3) = nsub(3) + 1
-!             subpops(3,nsub(3)) = k
-!         else
-!             nsub(4) = nsub(4) + 1
-!             subpops(4,nsub(4)) = k
-!         end if            
-! end do
-! 
-! do j=1,4
-!     do l=1,nb
-!         do i=1,nsub(j)
-!             freqs(j,l) = freqs(j,l) + g(subpops(j,i),l)
-!         end do
-!         freqs(j,l) = freqs(j,l)/real(nsub(j))
-!     end do
-! end do
-! 
-! do l=1,nb
-!     do i=1,4
-!         freqs(5,l) = freqs(5,l) + freqs(i,l) 
-!     end do
-!     freqs(5,l) = freqs(5,l)/4.0
-! end do
-! 
-! do j=1,5
-!     do l=1,nb
-!         Hs(j,l) = 2*freqs(j,l)*(1-freqs(j,l))
-!     end do
-! end do
-! 
-! Fst=0
-! do l =1,nb
-!     Fst(l) = (Hs(5,l)-((Hs(1,l)+Hs(2,l)+Hs(3,l)+Hs(4,l))/4)) / Hs(5,l)
-! end do
-! 
-! write(6,'(10f15.3)') (Fst(l),l=1,nb)
-! !pause
-! 
-! deallocate(nsub,freqs,Hs)
-! deallocate(subpops)
 end
 
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!! !!!!!!!!!!!!!!!!!!!!
