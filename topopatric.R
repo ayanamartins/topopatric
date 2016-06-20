@@ -18,16 +18,16 @@ color.function <- function(palette,n) colorRampPalette(palette)(n)
 ## SECTION 1
 ## Read parameter values
 pars <- read.table('pop-SIM001.001.dat', nrows = 5)
-N <- pars$V2[1]
+N <- 1000#pars$V2[1]
 S <- pars$V1[3]
-B <- pars$V3[3]
+B <- 1000#pars$V3[3]
 relativeS <- round((as.numeric(as.character(pars$V1[3])))**2/(as.numeric(as.character(pars$V3[1])))**2,4)*100
-deltat <- as.numeric(as.character(pars$V4[1]))
+deltat <- 50#as.numeric(as.character(pars$V4[1]))
 
 ###############################################################
 ## SECTION 2
 ##Distribution of number of compatible mates (=degree)
-degree <- read.table("degree_distplotSIM001.001.dat")
+degree <- read.table("degree_distplotSIM007.001.dat")
 filesize <- dim(degree)[1]
 saveGIF({
   for (i in seq(N,filesize,N))
@@ -51,14 +51,58 @@ saveGIF({
          xlim=c(0,1000), ylim = c(0,10), pch=19)
     fit = lm(degree[(i-999):i,2] ~ degree[(i-999):i,1])
     color = "blue"
-    if(i > 5*N) if(fit$coefficients[2] < 0) color = "red"
-    if(i > 5*N) abline(fit,lwd=1.5,lty=2,col=color)
+    if(i > 1) if(fit$coefficients[2] < 0) color = "red"
+    if(i > 1) abline(fit,lwd=1.5,lty=2,col=color)
     text(900,10,"fit = ax+b")
     text(900,9,paste("a=",round(fit$coefficients[2],5), sep=''),col=color)
   }
 })
 dev.off()
+prob_mating <- c(0,0,0)
+for (sim in 1:7)
+{
+  filename <- paste("degree_distplotSIM00",sim,".001.dat", sep="")
+  degree <- read.table(filename)
+  filesize <- dim(degree)[1]
+  i=filesize
+  final_degree <- degree[(i-999):i,]
+  for (i in seq(50,(N-100),100))
+  {
+    subset <- final_degree[which(final_degree$V1>i & final_degree$V1<=(i+50)),]
+    if(dim(subset)[1] > 10)
+    {
+      prob <- 1-(length(which(subset$V2 == 0))/dim(subset)[1])
+      prob_mating <- rbind(prob_mating, c(sim,(i+i+50)/2,prob))
+    }
+  }
+}
+prob_mating <- prob_mating[-1,]
+plot(prob_mating[,1],prob_mating[,2],pch=19, xlim=c(0,N), ylim=c(0,1))
+points(prob_mating[,1],prob_mating[,2],pch=19, xlim=c(0,N), ylim=c(0,1), col='red')
+prob_mating <- as.data.frame(prob_mating)
+names(prob_mating) <- c('c','k','prob')
 
+library(ggplot2)
+c.discrete <- factor(prob_mating$c, 
+                     levels=unique(as.character(prob_mating$c)), 
+                     unique(as.character(prob_mating$c)))
+ggplot(prob_mating, aes(x=k, y=prob, color=c.discrete)) + 
+  geom_line(aes(group=c)) +
+  labs(color="number of attempts") + 
+  xlab('Number of compatible mates') + 
+  ylab('Probability of finding a compatible mate') + 
+  xlim(0,N) + ylim(0,1.02) +
+  geom_hline(yintercept = 1, color="black",
+             linetype="dashed", size=0.8) +
+  geom_vline(xintercept = 0, color="black",
+             linetype="dashed", size=0.8) +
+  theme(plot.margin = unit(c(0.2,0.2,0.2,0.2), "cm"),
+        legend.position = "bottom", 
+        legend.direction = "horizontal",
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        plot.background = element_rect(fill = "transparent",colour = NA)
+  )
 ###############################################################
 ## SECTION 4
 ##Fst
@@ -75,7 +119,7 @@ abline(h=outlier,lty=2)
 ###############################################################
 ## SECTION 5
 ##Distribution of genetic distances
-dist <- read.table('distSIM001.001.dat')
+dist <- read.table('distSIM007.001.dat')
 nvalues <- N*(N-1)/2
 filesize <- dim(dist)[1]
 saveGIF({
@@ -90,20 +134,20 @@ saveGIF({
 ###############################################################
 ## SECTION 6
 ##Plot individuals in space colored by species
-speciesplot <- read.table('speciesplotSIM001.001.dat')
-nspecies <- max(speciesplot$V3)
+speciesplot <- read.table('speciesplotSIM005.001.dat')
+nspecies <- max(speciesplot$V1)
 sspcolors <- color.function(colors, nspecies)
 plot(speciesplot$V1, speciesplot$V2, col=sspcolors[speciesplot$V3], pch=16, cex=1.1, axes=FALSE,asp=1, xlab="", ylab="")
 
-ssp1g <- (speciesplot[which(speciesplot[,3]==1),4:1003])
-ssp2g <- (speciesplot[which(speciesplot[,3]==2),4:1003])
-ssp3g <- (speciesplot[which(speciesplot[,3]==3),4:1003])
-ssp1m <- (speciesplot[which(speciesplot[,3]==1),1004:2003])
-ssp2m <- (speciesplot[which(speciesplot[,3]==2),1004:2003])
-ssp3m <- (speciesplot[which(speciesplot[,3]==3),1004:2003])
+ssp1g <- (speciesplot[which(speciesplot[,1]==1),4:1003])
+ssp2g <- (speciesplot[which(speciesplot[,1]==2),4:1003])
+ssp3g <- (speciesplot[which(speciesplot[,1]==3),4:1003])
+ssp1m <- (speciesplot[which(speciesplot[,1]==1),1004:2003])
+ssp2m <- (speciesplot[which(speciesplot[,1]==2),1004:2003])
+ssp3m <- (speciesplot[which(speciesplot[,1]==3),1004:2003])
 
 
-hist(rowSums(ssp2m),xlim=c(50,150),col="gray",ylim=c(0,50))
+hist(rowSums(ssp2m),xlim=c(0,150),col="gray",ylim=c(0,50))
 hist(rowSums(ssp2g), col="blue",add=TRUE)
 
 ssp1gP <- colSums(ssp1g)/dim(ssp1g)[1]

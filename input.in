@@ -1,22 +1,22 @@
-1000            1000            128             50
-0.00025         1               1             0  
-5               0.1             15000          .false.
-0               0               0             .true.  
-.true.          100             1               1
+1000            1000            0            
+0.00025         1               50            
+0.01            10000           100          
+.true.          .false.         .false. 
+0               0               0              
+7               1
 
 
-T		N		L		deltat
-mu		D		m		MNPM
-S		G		B               DMI
-IREAD		INIS		INISBIT         discretegen
-independent_loci window		nparameter       replica
+T                   N                   ntrials                   
+mu                  m                   deltat
+G                   B                   window
+independent_loci    discretegen         DMI 
+IREAD               INIS                INISBIT
+nparameter          replica
 
 #Parameter description
 T - time in number of generations (1 generation = N reproductive events)
 
 N - number of individuals (constant)
-
-L - length of squared lattice (area = L^2)
 
 detalt - time interval to calculate number of species and other metrics
 
@@ -26,10 +26,6 @@ D - dispersal rate (dispersal occurs with probability D to a random location
 within the area defined by S)
 
 m - mortality rate. Dead individuals will be replaced by newly born individuals
-
-MNPM - not implemented here
-
-S - radius of the mating and the dispersal area
 
 G - relative reproductive threshold
 
@@ -56,9 +52,3 @@ nparameter - number of paramenters sets to used in this run
 
 replica - number of replica for each parameter set
 
-# Speciation for lower Nmu
-1000            1000            128             50
-0.00025         1               0.3             0  
-5               0.1             1000          .false.
-0               0               0             .false.  
-.true.          100             1               1

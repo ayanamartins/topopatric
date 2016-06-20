@@ -1,6 +1,6 @@
 ! topopatric.f90 -- v0.2
-! panmictic -- v0
-!Ayana B. Martins - 17/Jun/2016
+! panmictic -- v0.1
+!Ayana B. Martins - 20/Jun/2016
 
 module globals
 !!Loop variables
@@ -9,15 +9,15 @@ logical keep_going
 integer(4), allocatable :: id(:)
 
 !!CPU time variables
-real:: start, finish
+real:: start, finish,local_start,local_finish
 integer(4) hours, minutes,seconds
 
 !!Input variables
-integer(4) :: ntime,nc,mnpm,nb,radius,ntrials
+integer(4) :: ntime,nc,nb,ntrials
 real rg
-integer(4) nf,deltat,sampled_times,window,stable
+integer(4) deltat,sampled_times,window,stable
 integer(4) iread,inis,inisbit
-real diff,mut,m,critG
+real mut,m,critG
 logical independent_loci, is_dmi, discretegen
 
 !!Genotype and phenotype variables
@@ -57,7 +57,7 @@ integer(4), allocatable :: replica_igt(:), replica_stable(:)
 integer, dimension(:), allocatable :: iseed
 integer :: nseed
 
-integer(4) candidate
+integer(4) candidate, mate, these_trials
 logical get_replacement
 real isum
 
@@ -66,7 +66,7 @@ integer(4) trials
 integer(4) check
 
 integer(4) :: shuffle,shuffled
-integer(4), allocatable, save :: random_order(:)
+integer(4), allocatable, save :: random_order(:), random_order_mates(:)
 integer(4), allocatable:: auxx(:), auxy(:), auxg(:,:), auxm(:,:)
 
 logical, allocatable :: dead(:)
@@ -78,27 +78,19 @@ call cpu_time(start)
 ! Read input data
 !!Brief description of each parameter can be found in the input file
 open(unit=7,file='input.in',status='old',position='rewind')
-    read(7,*) ntime,nc,nf,deltat
-    read(7,*) mut,diff,m,mnpm
-    read(7,*) radius,critG,nb, is_dmi
-    read(7,*) iread,inis,inisbit, discretegen
-    read(7,*) independent_loci,window,nsets,replica
+    read(7,*) ntime,nc,ntrials
+    read(7,*) mut,m,deltat
+    read(7,*) critG,nb,window
+    read(7,*) independent_loci,discretegen,is_dmi
+    read(7,*) iread,inis,inisbit
+    read(7,*) nsets,replica
 close(7)
 open(unit=50,file='seed.in',status='old')  
 
 !Absolute threshold is calculated from relative input
-rg=100
-
-ntrials = nc
-
-if (mnpm /= 0) then
-	write(6,*) 'Maybe you forgot that this version cannot handle the mnpm rule?'
-	write(6,*) 'Duh!'
-	stop
-end if
+rg=nint(nb*critG)
 
 if (nsets > 1) open(unit=16,file='par.in',status='old',position='rewind')
-
 
 !Erase appendable output files
 open(unit=17,file='summary.dat',status='unknown')
@@ -110,7 +102,7 @@ close(18, status='delete')
 simulation: do iparameter=1,nsets!change parameters
 
     allocate (replica_igt(replica),replica_stable(replica))
-    if (nsets > 1) read (16, *) 
+    if (nsets > 1) read (16, *) ntrials
     if (iparameter > 99) then
         write(simID,'(i3)') iparameter
     elseif (iparameter > 9) then
@@ -147,7 +139,7 @@ simulation: do iparameter=1,nsets!change parameters
         allocate (goff(nc,nb), moff(nc,nb))
         allocate (ispv(nc),ispecies(nc,nc))
         allocate(previous_igt(ntime),previous_gdists(ntime))
-        allocate(random_order(nc))
+        allocate(random_order(nc),random_order_mates(nc))
         allocate(noff(nc))
         allocate(Fst(nb),FstNull(nb))
         allocate(auxg(nc,nb),auxm(nc,nb))
@@ -213,48 +205,73 @@ simulation: do iparameter=1,nsets!change parameters
                 call random_number(random) 
                 if (random < m) then
                     get_replacement = .true.
-                    dead(k) = .true.
-                    call random_number(random)
-                    kmother = int(random*nc)+1                    
+                    dead(k) = .true.                                      
                 end if
                 !Only replace the individual if it has died
-                kmate = 0
                 if (dead(k)) then
-                    666 trials = 0
-                    searchpop: do while (trials < ntrials)
-                        trials = trials + 1   
+                    candidate = 0
+                    kmother = 0
+                    mate = 0
+                    kmate = 0
+                    do i=1,nc
+                        random_order(i) = i
+                    end do
+                    do i=nc,1,-1
                         call random_number(random)
-                        candidate = int(random*nc)+1  
-                        if(candidate == k) then
-                            trials = trials -1
-                            cycle searchpop !don't mate with the dead D:
-                        end if
-                        if(candidate == kmother) then
-                            trials = trials - 1
-                            cycle searchpop !no self-fertilization                            
-                        end if
-                        dista = 0
-                        do l=1,nb
-                            if(is_dmi) then
-                                if (g(kmother,l) + g(i,l) > 0) dista = dista + 1
-                                if(dista > rg) exit
-                            else
-                                dista = dista + abs(g(kmother,l)-g(i,l))
-                                if(dista > rg) exit
-                            end if
+                        shuffle = int(random*(nc-1))+1
+                        shuffled = random_order(i)
+                        random_order(i) = random_order(shuffle)
+                        random_order(shuffle) = shuffled
+                    end do
+                    rep: do while (get_replacement)
+                        candidate = candidate + 1
+                        kmother = random_order(candidate)
+!                       write(6,*) k, candidate, kmother                        
+                        do i=1,nc
+                            random_order_mates(i) = i
                         end do
-                        if(dista <= rg) then
-                            kmate = candidate
-                            exit searchpop
+                        do i=nc,1,-1
+                            call random_number(random)
+                            shuffle = int(random*(nc-1))+1
+                            shuffled = random_order_mates(i)
+                            random_order_mates(i) = random_order_mates(shuffle)
+                            random_order_mates(shuffle) = shuffled
+                        end do
+                        trials = 0
+                        these_trials = ntrials
+                        searchpop: do while (trials < these_trials)
+                            trials = trials + 1
+                            if (trials > nc) cycle rep
+                            mate = random_order_mates(trials)
+                            if(mate == k) then
+                                these_trials = these_trials + 1
+                                cycle searchpop !don't mate with the dead D:
+                            end if
+                            if(mate == kmother) then
+                                these_trials = these_trials + 1
+                                cycle searchpop !no self-fertilization                            
+                            end if
+                            dista = 0
+                            do l=1,nb
+                                if(is_dmi) then
+                                    if (g(kmother,l) + g(mate,l) > 0) dista = dista + 1
+                                    if(dista > rg) exit
+                                else
+                                    dista = dista + abs(g(kmother,l)-g(mate,l))
+                                    if(dista > rg) exit
+                                end if
+                            end do
+                            if(dista <= rg) then
+                                kmate = mate
+                                get_replacement = .false.
+                                exit searchpop
+                            end if
+                        end do searchpop
+                        if (kmate == 0 .and. candidate == nc) then
+                            write(6,*) 'There is no one to replace k!!'
+                            exit
                         end if
-                    end do searchpop
-                    if (kmate == 0) then
-                        write(6,*) 'Oh, not! Forever alone', dista
-                        call random_number(random)
-                        kmother = int(random*nc)+1
-                        write(6,*) kmother
-                        go to 666
-                    end if
+                    end do rep!get replacement 
 
                     noff(kmother) = noff(kmother) + 1
                     noff(kmate) = noff(kmate) + 1
@@ -341,9 +358,13 @@ simulation: do iparameter=1,nsets!change parameters
             end if
             ! calculate species and other metrics every deltat
             check_time = (float(itime)/float(deltat) - itime/deltat)
-            if (check_time == 0.0) then
+            if (check_time == 0.0 .or. itime==ntime) then
                 sampled_times=sampled_times+1
-                call findspecies         
+                call cpu_time(local_start)
+                call findspecies
+                call cpu_time(local_finish)
+                write(6,*) 'Time: findspecies'
+                call ellapsed_time(local_start,local_finish)
                 if (igt < 5) then
                     write(6,*) itime,itime+iitime,nc,igt,(ispv(k),k=1,igt)
                 else
@@ -355,30 +376,43 @@ simulation: do iparameter=1,nsets!change parameters
                         if (ispv(i) > 20) check = check + 1
                     end do
                 end if
-                if (check > 2) then
-                    filename = 'dist'//trim(simulationID)//'.dat'
-                    open(unit=22,file=filename,status='unknown', position='append')
-                        call is_stable
-                    close(22)
-                    if(itime==ntime) then
-                        keep_going=.false.
-                        stable = 0
-                    end if
-                    !Calculate the number of potential partners for each individual
-                    filename = 'degree_distplot'//trim(simulationID)//'.dat'
-                    open(unit=19,file=filename,status='unknown', position='append')
-                        call degree_dist
-                    close(19)
-                    !Calculate Fst and generare a list to calculate the 95% confidence interval
-                    if (igt > 1) then
-                        filename = 'Fst'//trim(simulationID)//'.dat'
-                        open(unit=20,file=filename,status='unknown',position='append')
-                        filename = 'FstNull'//trim(simulationID)//'.dat'
-                        open(unit=21,file=filename,status='unknown',position='append')
-                            call calcfst
-                        close(20)
-                        close(21)
-                    end if
+                filename = 'dist'//trim(simulationID)//'.dat'
+                open(unit=22,file=filename,status='unknown', position='append')
+                !Calculate the number of potential partners for each individual
+                filename = 'degree_distplot'//trim(simulationID)//'.dat'
+                open(unit=19,file=filename,status='unknown', position='append')
+                    call cpu_time(local_start)
+                    call is_stable
+                    call cpu_time(local_finish)
+                    write(6,*) 'Time: is_stable'
+                    call ellapsed_time(local_start,local_finish)
+                close(22)
+                close(19)
+!                 !Calculate the number of potential partners for each individual
+!                 filename = 'degree_distplot'//trim(simulationID)//'.dat'
+!                 open(unit=19,file=filename,status='unknown', position='append')
+!                     call cpu_time(local_start)
+!                     call degree_dist
+!                     call cpu_time(local_finish)
+!                     write(6,*) 'Time: degree_dist'
+!                     call ellapsed_time(local_start,local_finish)                    
+!                 close(19)
+                !Calculate Fst and generare a list to calculate the 95% confidence interval
+                if (igt > 1) then
+                    filename = 'Fst'//trim(simulationID)//'.dat'
+                    open(unit=20,file=filename,status='unknown',position='append')
+                    filename = 'FstNull'//trim(simulationID)//'.dat'
+                    open(unit=21,file=filename,status='unknown',position='append')
+                        call cpu_time(local_start)
+                        call calcfst
+                        call cpu_time(local_finish)
+                        write(6,*) 'Time: calcfst'
+                        call ellapsed_time(local_start,local_finish)                               
+                    close(20)
+                    close(21)
+                end if
+                if (check > 2 .or. itime==ntime) then
+                    keep_going=.false.
                 end if
             else
                 write(6,*) itime,itime+iitime
@@ -413,9 +447,9 @@ simulation: do iparameter=1,nsets!change parameters
             write(6,*) 'Stability not reached'
         end if
 
-        902 format(a15,1x,i15,1x,i15,1x,f15.5,1x,f15.2,1x,f15.2,1x,i15,1x,f15.2,1x,i15,1x,i15,1x,i15)
+        902 format(a15,1x,i15,1x,f15.5,1x,f15.2,1x,f15.2,1x,i15,1x,i15,1x,i15,1x,i15)
         open(unit=17,file='summary.dat',status='unknown', position='append')
-            write(17,902) simulationID,nc,nf,mut,diff,m,radius,rg,nb,stable,igt
+            write(17,902) simulationID,nc,mut,m,critG,nb,ntrials,stable,igt
         close(17)
         replica_igt(ireplica) = igt
         replica_stable(ireplica) = stable
@@ -435,18 +469,19 @@ simulation: do iparameter=1,nsets!change parameters
         filename = 'geneticdata'//trim(simulationID)//'.dat'
         open(unit=9,file=filename,status='unknown',position='rewind')
             do i=1,nc
-                write (9,'(10000i2)') (g(i,j),j=1,nb)
+                write (9,'(500000i1)') (g(i,j),j=1,nb)
             end do
         close(9)
 
-        901 format(i4,1x,i4,1x,1000i1)
+        901 format(i4,1x,i4,1x,500000i1)
         filename = 'pop-'//trim(simulationID)//'.dat'
         open(unit=10,file=filename,status='unknown',position='rewind')
-            write(10,*) iitime,nc,nf,deltat
-            write(10,*) mut,diff,m,mnpm
-            write(10,*)  radius,rg,nb, is_dmi
-            write(10,*) iread,inis,inisbit,discretegen
-            write(10,*) independent_loci,window,nsets,replica
+            write(10,*) ntime,nc,ntrials
+            write(10,*) mut,m,deltat
+            write(10,*) critG,nb,window
+            write(10,*) independent_loci,discretegen,is_dmi
+            write(10,*) iread,inis,inisbit
+            write(10,*) nsets,replica,aux
             do i=1,nc
                 write (10,901) (g(i,j),j=1,nb)
             end do
@@ -458,7 +493,7 @@ simulation: do iparameter=1,nsets!change parameters
         deallocate (ispv,ispecies)
         deallocate(previous_igt,previous_gdists)
         deallocate(iseed)
-        deallocate(random_order)
+        deallocate(random_order,random_order_mates)
         deallocate(noff)
         deallocate(Fst, FstNull)
         deallocate(auxg,auxm)
@@ -467,9 +502,9 @@ simulation: do iparameter=1,nsets!change parameters
     end do !replica
 
     open(unit=18,file='summary_replica.dat',status='unknown', position='append')
-        write(18,903) nc,nf,mut,diff,m,radius,rg,nb,(replica_stable(i),i=1,replica),(replica_igt(j),j=1,replica)
+        write(18,903) nc,mut,m,critG,nb,ntrials,(replica_stable(i),i=1,replica),(replica_igt(j),j=1,replica)
     close(18)
-    903 format(i15,1x,i15,1x,f15.5,1x,f15.2,1x,f15.2,1x,i15,1x,f15.2,1x,i15,1x,10i15,1x,10i15)
+    903 format(i15,1x,f15.5,1x,f15.2,1x,f15.2,1x,i15,1x,i15,1x,10i15,1x,10i15)
     deallocate (replica_igt, replica_stable)
 end do simulation!change parameters
 
@@ -479,7 +514,7 @@ close(50)
 
 call cpu_time(finish)
 write(6,*) 'Time', finish-start
-call ellapsed_time
+call ellapsed_time(start,finish)
 
 end program topopatric
 
@@ -580,32 +615,32 @@ deallocate (species,auxy1,auxy2)
 
 end
 
-!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-! Calculate dist of degrees                     !
-!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-subroutine degree_dist
-use globals, only:i,j,l,g,nc,nb,rg,is_dmi, noff
-implicit none
-integer(4) dista,partners
-
-do i=1,nc
-    partners= 0
-    do j=1,nc
-        if (i==j) cycle
-        dista = 0
-        do l=1,nb
-            if(is_dmi) then
-                if (g(i,l) + g(j,l) > 0) dista = dista + 1
-            else
-                dista = dista + abs(g(i,l) - g(j,l)) 
-            end if
-        end do
-        if (dista <= rg) partners = partners + 1
-    end do
-    write(19,*) partners, noff(i)
-end do
-
-end
+! !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+! ! Calculate dist of degrees                     !
+! !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+! subroutine degree_dist
+! use globals, only:i,j,l,g,nc,nb,rg,is_dmi, noff
+! implicit none
+! integer(4) dista,partners
+! 
+! do i=1,nc
+!     partners= 0
+!     do j=1,nc
+!         if (i==j) cycle
+!         dista = 0
+!         do l=1,nb
+!             if(is_dmi) then
+!                 if (g(i,l) + g(j,l) > 0) dista = dista + 1
+!             else
+!                 dista = dista + abs(g(i,l) - g(j,l)) 
+!             end if
+!         end do
+!         if (dista <= rg) partners = partners + 1
+!     end do
+!     write(19,*) partners, noff(i)
+! end do
+! 
+! end
 
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 ! Calculate Fst for n subpopulations            !
@@ -721,25 +756,34 @@ end
 ! Check if number of species is stable          !
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 subroutine is_stable
-use globals, only:i,j,k,g,nc,nb,igt,previous_igt,previous_gdists,keep_going,window,stable,deltat,sampled_times
+use globals, only:i,j,l,g,nc,nb,rg,is_dmi,noff,igt,previous_igt,previous_gdists,keep_going,window,stable,deltat,sampled_times
 implicit none
 integer(4) igt_sum,dist,idists
 real distsum, gdists_sum,gdists_mean
 real igt_mean,check_mean
+integer(4) dista,partners
 
 distsum=0
 idists=0
 
 do i=1,nc
-    do j=i+1,nc
+    partners = 0
+    do j=1,nc
+        if (i==j) cycle
         dist=0
         idists=idists+1
-        do k=1,nb
-            dist = dist + abs(g(i,k)-g(j,k))
+        do l=1,nb
+            if(is_dmi) then
+                if (g(i,l) + g(j,l) > 0) dist = dist + 1
+            else
+                dist = dist + abs(g(i,l) - g(j,l)) 
+            end if
         end do
+        if (dist <= rg) partners = partners + 1
         write(22,*) dist
         distsum = distsum + dist
     end do
+    write(19,*) partners, noff(i)
 end do
 
 previous_gdists(sampled_times)=distsum/idists
@@ -762,8 +806,9 @@ end
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 ! Shows how long it took to run the program     !
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-subroutine ellapsed_time
+subroutine ellapsed_time(this_start,this_finish)
 use globals, only:start,finish,hours,minutes,seconds
+real, intent(in) :: this_start,this_finish
 real time
 
 time=0
@@ -771,7 +816,7 @@ hours=0
 minutes=0
 seconds=0
 
-time= finish-start
+time= this_finish-this_start
 
 hours=time/3600
 time=MOD(time,3600.0)
