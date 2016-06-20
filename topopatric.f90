@@ -63,8 +63,6 @@ real isum
 
 integer(4) trials
 
-integer(4) check
-
 integer(4) :: shuffle,shuffled
 integer(4), allocatable, save :: random_order(:), random_order_mates(:)
 integer(4), allocatable:: auxx(:), auxy(:), auxg(:,:), auxm(:,:)
@@ -370,12 +368,6 @@ simulation: do iparameter=1,nsets!change parameters
                 else
                     write(6,*) itime,itime+iitime,nc,igt,(ispv(k),k=1,4),'...'
                 end if
-                check = 0
-                if (igt > 1) then                    
-                    do i=1,igt
-                        if (ispv(i) > 20) check = check + 1
-                    end do
-                end if
                 filename = 'dist'//trim(simulationID)//'.dat'
                 open(unit=22,file=filename,status='unknown', position='append')
                 !Calculate the number of potential partners for each individual
@@ -389,7 +381,7 @@ simulation: do iparameter=1,nsets!change parameters
                 close(22)
                 close(19)
                 !Calculate Fst and generare a list to calculate the 95% confidence interval
-                if (check > 2) then
+                if (igt > 1) then
                     filename = 'Fst'//trim(simulationID)//'.dat'
                     open(unit=20,file=filename,status='unknown',position='append')
                     filename = 'FstNull'//trim(simulationID)//'.dat'
