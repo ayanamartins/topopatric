@@ -388,17 +388,8 @@ simulation: do iparameter=1,nsets!change parameters
                     call ellapsed_time(local_start,local_finish)
                 close(22)
                 close(19)
-!                 !Calculate the number of potential partners for each individual
-!                 filename = 'degree_distplot'//trim(simulationID)//'.dat'
-!                 open(unit=19,file=filename,status='unknown', position='append')
-!                     call cpu_time(local_start)
-!                     call degree_dist
-!                     call cpu_time(local_finish)
-!                     write(6,*) 'Time: degree_dist'
-!                     call ellapsed_time(local_start,local_finish)                    
-!                 close(19)
                 !Calculate Fst and generare a list to calculate the 95% confidence interval
-                if (igt > 1) then
+                if (check > 2) then
                     filename = 'Fst'//trim(simulationID)//'.dat'
                     open(unit=20,file=filename,status='unknown',position='append')
                     filename = 'FstNull'//trim(simulationID)//'.dat'
@@ -411,7 +402,7 @@ simulation: do iparameter=1,nsets!change parameters
                     close(20)
                     close(21)
                 end if
-                if (check > 2 .or. itime==ntime) then
+                if (itime==ntime) then
                     keep_going=.false.
                 end if
             else

@@ -3,7 +3,7 @@
 0.01            10000           100          
 .true.          .false.         .false. 
 0               0               0              
-7               1
+7               3
 
 
 T                   N                   ntrials                   
@@ -18,18 +18,24 @@ T - time in number of generations (1 generation = N reproductive events)
 
 N - number of individuals (constant)
 
-detalt - time interval to calculate number of species and other metrics
+ntrials - number of mate assessed before mating
 
 mu - mutation rate per locus per reproductive event
 
-D - dispersal rate (dispersal occurs with probability D to a random location
-within the area defined by S)
-
 m - mortality rate. Dead individuals will be replaced by newly born individuals
+
+detalt - time interval to calculate number of species and other metrics
 
 G - relative reproductive threshold
 
 B - number of loci
+
+window - number of generations over each number of species is tested for stability
+
+independent_loci - if .true. each locus is transmitted independently. If .false.
+a single crossover occurs in each reproductive events
+
+discretegen - if .true. generations are discretegen
 
 DMI - specifies if genetic incompabilities are intralocus (Hamming distance)
 or interlocus (DMI)/ .false. or .true. respectively
@@ -40,13 +46,6 @@ INIS - initial spatial distribution (0 = random, 1 = centralized)
 
 INISBIT - initial genotypes (0 = identical and equal to 0 in every loci,
 1 = random)
-
-discretegen - if .true. generations are discretegen
-
-independent_loci - if .true. each locus is transmitted independently. If .false.
-a single crossover occurs in each reproductive events
-
-window - number of generations over each number of species is tested for stability
 
 nparameter - number of paramenters sets to used in this run
 
