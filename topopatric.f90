@@ -1,10 +1,5 @@
-! topopatric.f90 -- v0.2
+! topopatric.f90 -- v1
 !Ayana B. Martins - 07/Fev/2017
-
-!Strips topopatric of extra features:
-!! generations can only be discrete
-!! no tracking of number of offspring
-!! removed number of mating trials
 
 MODULE globals
 !!Loop variables
@@ -17,7 +12,7 @@ REAL:: start, finish
 INTEGER(4) hours, minutes,seconds
 
 !!Input variables
-INTEGER(4) :: ntime,nc,mnpm,nb,radius
+INTEGER(4) :: ntime,nc,mnpm,nb,radius,disp_rad
 REAL rg
 INTEGER(4) nf,deltat,sampled_times,window,stable
 INTEGER(4) iREAD,inis,inisbit
@@ -79,7 +74,7 @@ OPEN (unit=7,file='input.in',status='old',position='rewind')
     READ(7,*) ntime,nc,nf,deltat
     READ(7,*) mut,diff,m,mnpm
     READ(7,*) radius,critG,nb, is_dmi
-    READ(7,*) iREAD,inis,inisbit
+    READ(7,*) iREAD,inis,inisbit, disp_rad
     READ(7,*) independent_loci,window,nsets,replica
 CLOSE(7)
 OPEN (unit=50,file='seed.in',status='old')  
@@ -388,9 +383,9 @@ simulation: DO iparameter=1,nsets!change parameters
             WRITE(6,*) 'Stability not reached'
         END IF
 
-        902 FORMAT(a15,1x,i15,1x,i15,1x,f15.5,1x,f15.2,1x,f15.2,1x,i15,1x,f15.2,1x,i15,1x,i15,1x,i15)
+        902 FORMAT(a15,1x,i15,1x,i15,1x,f15.5,1x,f15.2,1x,f15.2,1x,i15,1x,f15.2,1x,i15,1x,i15,1x,i15,1x,i15)
         OPEN (unit=17,file='summary.dat',status='unknown', position='append')
-            WRITE(17,902) simulationID,nc,nf,mut,diff,m,radius,rg,nb,stable,igt
+            WRITE(17,902) simulationID,nc,nf,mut,diff,m,radius,rg,nb,disp_rad,stable,igt
         CLOSE(17)
         replica_igt(ireplica) = igt
         replica_stable(ireplica) = stable
@@ -420,7 +415,7 @@ simulation: DO iparameter=1,nsets!change parameters
             WRITE(10,*) iitime,nc,nf,deltat
             WRITE(10,*) mut,diff,m,mnpm
             WRITE(10,*)  radius,rg,nb, is_dmi
-            WRITE(10,*) iREAD,inis,inisbit
+            WRITE(10,*) iREAD,inis,inisbit,disp_rad
             WRITE(10,*) independent_loci,window,nsets,replica
             DO i=1,nc
                 WRITE (10,901) x(i),y(i),(g(i,j),j=1,nb)
@@ -439,9 +434,9 @@ simulation: DO iparameter=1,nsets!change parameters
     END DO !replica
 
     OPEN (unit=18,file='summary_replica.dat',status='unknown', position='append')
-        WRITE(18,903) nc,nf,mut,diff,m,radius,rg,nb,(replica_stable(i),i=1,replica),(replica_igt(j),j=1,replica)
+        WRITE(18,903) nc,nf,mut,diff,m,radius,rg,nb,disp_rad,(replica_stable(i),i=1,replica),(replica_igt(j),j=1,replica)
     CLOSE(18)
-    903 FORMAT(i15,1x,i15,1x,f15.5,1x,f15.2,1x,f15.2,1x,i15,1x,f15.2,1x,i15,1x,10i15,1x,10i15)
+    903 FORMAT(i15,1x,i15,1x,f15.5,1x,f15.2,1x,f15.2,1x,i15,1x,f15.2,1x,i15,1x,i15,1x,10i15,1x,10i15)
     DEALLOCATE (replica_igt, replica_stable)
 END DO simulation!change parameters
 
@@ -499,7 +494,7 @@ END
 ! Dispersal                                     !
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 SUBROUTINE DISPERSAL(k)
-USE globals, ONLY:nf,diff,x,y,radius
+USE globals, ONLY:nf,diff,x,y,disp_rad
 IMPLICIT NONE
 INTEGER(4), intent(in) :: k
 INTEGER(4) iix,iiy
@@ -510,7 +505,7 @@ CALL random_number(random)
 IF(random < diff) THEN
     ! calculate new position
     CALL random_number(random)
-    jump = radius*random
+    jump = disp_rad*random
     CALL random_number(random)
     turn = 2*random*pi
     iix = x(k)+nint(cos(turn)*jump)
