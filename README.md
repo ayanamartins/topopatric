@@ -10,13 +10,13 @@ of reproductively isolated groups occurs under certain conditions
 **General features:**
 * Individuals are haploid and hermaphrodite
 * Space is discrete (lattice)
+* Generations are discrete
 
 ##Notable differences in relation to the Aguiar's version:
 
 1. Individuals disperse within the mating radius
-2. Generations can be discrete or continuous
-3. Genetic incompatibilites can be intralocus or interlocus
-4. The genetic threshold is relative (0 to 1). If it is zero, inidividuals
+2. Genetic incompatibilites can be intralocus or interlocus
+3. The genetic threshold is relative (0 to 1). If it is zero, inidividuals
 will only mate to others with identical genotypes
 
 ##At least three files are required to run the program:
