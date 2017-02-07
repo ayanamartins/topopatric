@@ -1,14 +1,14 @@
-1000            1000            128             50
-0.00025         1               0.3             0  
-5               0.1             1000          .false.
-0               0               0             .false.  
+1000            1000            128             10
+0.00025         0               0.37             0  
+5               0.05            800          .false.
+0               0               0               
 .true.          100             1               1
 
 
 T		N		L		deltat
 mu		D		m		MNPM
 S		G		B               DMI
-IREAD		INIS		INISBIT         discretegen
+IREAD		INIS		INISBIT         
 independent_loci window		nparameter       replica
 
 #Parameter description
@@ -25,7 +25,7 @@ mu - mutation rate per locus per reproductive event
 D - dispersal rate (dispersal occurs with probability D to a random location
 within the area defined by S)
 
-m - mortality rate. Dead individuals will be replaced by newly born individuals
+m - chance of not reproducing
 
 MNPM - not implemented here
 
@@ -45,8 +45,6 @@ INIS - initial spatial distribution (0 = random, 1 = centralized)
 INISBIT - initial genotypes (0 = identical and equal to 0 in every loci,
 1 = random)
 
-discretegen - if .true. generations are discretegen
-
 independent_loci - if .true. each locus is transmitted independently. If .false.
 a single crossover occurs in each reproductive events
 
@@ -55,10 +53,3 @@ window - number of generations over each number of species is tested for stabili
 nparameter - number of paramenters sets to used in this run
 
 replica - number of replica for each parameter set
-
-# Speciation for lower Nmu
-1000            1000            128             50
-0.00025         1               0.3             0  
-5               0.1             1000          .false.
-0               0               0             .false.  
-.true.          100             1               1
