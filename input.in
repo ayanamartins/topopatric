@@ -1,14 +1,16 @@
 1000            1000            100             10
-0.0003         0               0.37             0  
+0.0003         0                5             0  
 5               0.1            500          .false.
-0               0               0              5 
+0.5             0.1
+0               0               0               
 .true.          100             1               1
 
 
 T		N		L		deltat
-mu		D		m		MNPM
+mu		D		disp_rad	MNPM
 S		G		B               DMI
-IREAD		INIS		INISBIT         disp_rad
+e0              sigk
+IREAD		INIS		INISBIT         
 independent_loci window		nparameter       replica
 
 #Parameter description
@@ -24,8 +26,6 @@ mu - mutation rate per locus per reproductive event
 
 D - dispersal rate (dispersal occurs with probability D to a random location
 within the area defined by S)
-
-m - chance of not reproducing
 
 MNPM - not implemented here
 

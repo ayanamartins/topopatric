@@ -15,12 +15,17 @@ INTEGER(4) :: ntime,nc,mnpm,nb,radius,disp_rad
 REAL rg
 INTEGER(4) nf,deltat,sampled_times,window,stable
 INTEGER(4) iREAD,inis,inisbit
-REAL diff,mut,m,critG
+REAL diff,mut,critG
 LOGICAL independent_loci, is_dmi
 
 !!Genotype and phenotype variables
 INTEGER(1), ALLOCATABLE :: g(:,:)
+INTEGER(1), ALLOCATABLE :: e(:,:)
 INTEGER(1), ALLOCATABLE :: markers(:,:)
+
+!!Fitness variables
+REAL, ALLOCATABLE :: fit(:)
+REAL(8) e0, sigk !trait optimum, variance in k
 
 !!Space and neighbor variables
 INTEGER(4), ALLOCATABLE :: x(:),y(:)
@@ -30,8 +35,7 @@ INTEGER(4), ALLOCATABLE, SAVE :: idqx(:),idqy(:)
 INTEGER(4) idensity,idq,nsites,this_radius
 INTEGER(4), ALLOCATABLE, SAVE :: ineighbor(:), ineighborg(:)
 
-
-!Species detection variables
+!!Species detection variables
 INTEGER(4) igt
 INTEGER(4), ALLOCATABLE :: ispv(:)
 INTEGER(4), ALLOCATABLE :: previous_igt(:)
@@ -40,8 +44,25 @@ REAL, ALLOCATABLE:: previous_gdists(:)
 
 END MODULE
 
+ MODULE Dist
+IMPLICIT NONE
+      REAL(8), PARAMETER :: PI=3.141592653589793238462
+      CONTAINS
+
+!
+! Random Sample from normal (Gaussian) distribution
+!
+      FUNCTION normal(x,mean,stdev) RESULT(c)
+       REAL(8) :: mean,stdev,c,x,expo,st
+        expo = exp(-1*((x - mean)**2.0d0)/(2.0d0*(stdev**2.0d0)))
+        c = expo/(sqrt(2.0d0*PI)*stdev)
+      END FUNCTION     
+      
+END MODULE
+
 PROGRAM topopatric
 USE globals
+USE Dist
 IMPLICIT NONE
 INTEGER(4) i,j,k,l,o !loop variables
 INTEGER(4) nsets,iparameter
@@ -56,6 +77,7 @@ CHARACTER*50 filename
 CHARACTER*20 simID,repID
 REAL check_time
 INTEGER(4), ALLOCATABLE :: replica_igt(:), replica_stable(:)
+REAL(8) ecotrait, fitsum
 
 !!Random seed variables
 INTEGER, DIMENSION(:), ALLOCATABLE :: iseed
@@ -71,14 +93,16 @@ INTEGER(4), ALLOCATABLE:: auxx(:), auxy(:), auxg(:,:), auxm(:,:)
 !!Temporarily stores offspring genotype
 INTEGER(1), ALLOCATABLE :: goff(:,:)
 INTEGER(1), ALLOCATABLE :: moff(:,:)
+INTEGER(1), ALLOCATABLE :: eoff(:,:)
 CALL cpu_time(start)
 ! READ input data
 !!Brief description of each parameter can be found in the input file
 OPEN (unit=7,file='input.in',status='old',position='rewind')
     READ(7,*) ntime,nc,nf,deltat
-    READ(7,*) mut,diff,m,mnpm
+    READ(7,*) mut,diff,disp_rad,mnpm
     READ(7,*) radius,critG,nb, is_dmi
-    READ(7,*) iREAD,inis,inisbit, disp_rad
+    READ(7,*) e0,sigk
+    READ(7,*) iREAD,inis,inisbit
     READ(7,*) independent_loci,window,nsets,replica
 CLOSE(7)
 OPEN (unit=50,file='seed.in',status='old')  
@@ -144,8 +168,9 @@ simulation: DO iparameter=1,nsets!change parameters
         
         !Start a new simulation
         ALLOCATE (id(nc))
-        ALLOCATE (g(nc,nb),markers(nc,nb))
-        ALLOCATE (goff(nc,nb), moff(nc,nb))
+        ALLOCATE (g(nc,nb),markers(nc,nb),e(nc,nb))
+        ALLOCATE (goff(nc,nb), eoff(nc,nb),moff(nc,nb))
+        ALLOCATE (fit(nc))
         ALLOCATE (x(nc),y(nc))
         ALLOCATE (neig(nc,nc),neigsp(nc,nc))
         ALLOCATE (ineighbor(nc), ineighborg(nc))
@@ -161,6 +186,9 @@ simulation: DO iparameter=1,nsets!change parameters
         markers = 0
         goff = 0
         moff = 0
+        e = 0
+        eoff = 0
+        fit = 0.0
         IF(inisbit /= 0) THEN !random genomes
             DO k=1,nc                    
                 DO i=1,nb
@@ -230,16 +258,30 @@ simulation: DO iparameter=1,nsets!change parameters
         sampled_times=0
         looptime: DO WHILE (keep_going)
             itime=itime+1
+            DO k = 1,nc
+                CALL FINDNEIG(k,radius)
+                CALL FINDGNEIG(k)
+                fit(k) = 0.37
+                ecotrait = 0
+                DO l = 1,nb
+                    ecotrait = ecotrait + e(k,l) 
+                END DO
+                ecotrait = ecotrait/nb
+                fit(k) = normal(ecotrait,e0,sigk)
+            END DO
             !Mating
-            DO k=1,nc
+            DO k = 1,nc
                 get_replacement = .false. !initially, we assume that this individual is going to reproduce
                 kmother = k
-                CALL FINDNEIG(kmother,radius)
-                CALL FINDGNEIG(kmother)
+                !CALL FINDNEIG(kmother,radius)
+                !CALL FINDGNEIG(kmother)
                 !There is a random chance (m) that k is going to die and be replaced by the offspring
                 !! of a pair of individuals nearby
+                DO i = 1, ineighbor(k)
+                    fitsum = fitsum + fit(neigsp(k,i))
+                END DO
                 CALL random_number(random) 
-                IF (random < m) THEN
+                IF (random < fit(k)) THEN
                     get_replacement = .true.
                 END IF
                 !Additionally, if k has not enough potential partners, it will also
@@ -267,12 +309,20 @@ simulation: DO iparameter=1,nsets!change parameters
                         END DO
                         DO l=1,nb
                             CALL random_number(aux)
-                            IF (aux<0.5) THEN
+                            IF (aux < 0.5) THEN
                                 moff(k,l)=markers(kmother,l)
                             ELSE
                                 moff(k,l)=markers(kmate,l)
                             END IF
                         END DO
+                        DO l=1,nb
+                            CALL random_number(aux)
+                            IF (aux < 0.5) THEN
+                                eoff(k,l)=e(kmother,l)
+                            ELSE
+                                eoff(k,l)=e(kmate,l)
+                            END IF
+                        END DO                        
                     ELSE
                         CALL random_number(aux)
                         kcross = int(aux*(nb-1))+1         ! crossover point
@@ -292,6 +342,24 @@ simulation: DO iparameter=1,nsets!change parameters
                                 goff(k,l) = g(kmate,l)
                             END DO
                         END IF
+                        CALL random_number(aux)
+                        kcross = int(aux*(nb-1))+1         ! crossover point
+                        CALL random_number(aux)
+                        IF(aux < 0.5) THEN
+                            DO l=1,kcross          ! copy first kcross bits of g(kmate) 
+                                eoff(k,l) = e(kmate,l)  ! and last bits of g(kmother) into g(k)
+                            END DO
+                            DO l=kcross+1,nb        
+                                eoff(k,l) = e(kmother,l)
+                            END DO
+                        ELSE
+                            DO l=1,kcross           ! copy first kcross bits of g(kmother) 
+                                eoff(k,l) = e(kmother,l) ! and last bits of g(kmate) into g(k)
+                            END DO
+                            DO l=kcross+1,nb       
+                                eoff(k,l) = e(kmate,l)
+                            END DO
+                        END IF                        
                     END IF
             END DO  ! end matings of the season
             
@@ -312,6 +380,13 @@ simulation: DO iparameter=1,nsets!change parameters
                             markers(k,l) = 1-markers(k,l)
                         END IF
                      END DO
+                    DO l=1,nb
+                        e(k,l) = eoff(k,l)
+                        CALL random_number(aux)
+                        IF(aux < mut) THEN
+                            e(k,l) = 1-e(k,l)
+                        END IF
+                     END DO                     
                      IF(diff /= 0.0) CALL DISPERSAL(k)
              END DO           
    
@@ -380,9 +455,9 @@ simulation: DO iparameter=1,nsets!change parameters
             WRITE(6,*) 'Stability not reached'
         END IF
 
-        902 FORMAT(a15,1x,i15,1x,i15,1x,f15.5,1x,f15.2,1x,f15.2,1x,i15,1x,f15.2,1x,i15,1x,i15,1x,i15,1x,i15)
+        902 FORMAT(a15,1x,i15,1x,i15,1x,f15.5,1x,f15.2,1x,i15,1x,i15,1x,f15.2,1x,i15,1x,f15.2,1x,f15.2,1x,i15)
         OPEN (unit=17,file='summary.dat',status='unknown', position='append')
-            WRITE(17,902) simulationID,nc,nf,mut,diff,m,radius,rg,nb,disp_rad,stable,igt
+            WRITE(17,902) simulationID,nc,nf,mut,diff,disp_rad,radius,rg,nb,e0,sigk,igt
         CLOSE(17)
         replica_igt(ireplica) = igt
         replica_stable(ireplica) = stable
@@ -410,9 +485,10 @@ simulation: DO iparameter=1,nsets!change parameters
         filename = 'pop-'//trim(simulationID)//'.dat'
         OPEN (unit=10,file=filename,status='unknown',position='rewind')
             WRITE(10,*) iitime,nc,nf,deltat
-            WRITE(10,*) mut,diff,m,mnpm
-            WRITE(10,*)  radius,rg,nb, is_dmi
-            WRITE(10,*) iREAD,inis,inisbit,disp_rad
+            WRITE(10,*) mut,diff,disp_rad,mnpm
+            WRITE(10,*) radius,rg,nb, is_dmi
+            WRITE(10,*) e0,sigk
+            WRITE(10,*) iREAD,inis,inisbit
             WRITE(10,*) independent_loci,window,nsets,replica
             DO i=1,nc
                 WRITE (10,901) x(i),y(i),(g(i,j),j=1,nb)
@@ -421,7 +497,8 @@ simulation: DO iparameter=1,nsets!change parameters
         CLOSE(10)
 
         DEALLOCATE (id)
-        DEALLOCATE (g,goff,markers,moff)
+        DEALLOCATE (g,goff,markers,moff,e,eoff)
+        DEALLOCATE (fit)
         DEALLOCATE (x,y,neig,neigsp)
         DEALLOCATE (ineighbor,ineighborg)
         DEALLOCATE (ispv,ispecies)
@@ -434,9 +511,9 @@ simulation: DO iparameter=1,nsets!change parameters
     END DO !replica
 
     OPEN (unit=18,file='summary_replica.dat',status='unknown', position='append')
-        WRITE(18,903) nc,nf,mut,diff,m,radius,rg,nb,disp_rad,(replica_stable(i),i=1,replica),(replica_igt(j),j=1,replica)
+        WRITE(18,903) nc,nf,mut,diff,disp_rad,radius,rg,nb,e0,sigk,(replica_stable(i),i=1,replica),(replica_igt(j),j=1,replica)
     CLOSE(18)
-    903 FORMAT(i15,1x,i15,1x,f15.5,1x,f15.2,1x,f15.2,1x,i15,1x,f15.2,1x,i15,1x,i15,1x,10i15,1x,10i15)
+    903 FORMAT(i15,1x,i15,1x,f15.5,1x,f15.2,1x,i15,1x,i15,1x,f15.2,1x,i15,1x,f15.2,1x,f15.2,1x,10i15,1x,10i15)
     DEALLOCATE (replica_igt, replica_stable)
 END DO simulation!change parameters
 
@@ -552,38 +629,38 @@ ALLOCATE(neigspk(nc),random_order(nc))
 this_radius = radius
 get_replacement = .true.
 replace: DO WHILE (get_replacement)
-                    ineighbork = ineighbor(this_k)
-                    DO i=1,ineighbork
-                        neigspk(i) = neigsp(this_k,i)                    
-                    END DO               
-                    ! k's neighbors are the first set of candidates
-                    !!! Arrange neighbors in a random order
-                    DO i=1,ineighbork
-                        random_order(i) = neigspk(i)
-                    END DO
-                    DO i=ineighbork,1,-1
-                        CALL random_number(random)
-                        shuffle = int(random*(ineighbork-1))+1
-                        shuffled = random_order(i)
-                        random_order(i) = random_order(shuffle)
-                        random_order(shuffle) = shuffled
-                    END DO
-                    !Sucessively check if each neighbor is a suitable candidate for replacement
-                    DO i=1,ineighbork
-                        candidate = random_order(i)
-                        !check if candidate is going to be able to reproduce
-                        CALL FINDNEIG(candidate, radius)
-                        CALL FINDGNEIG(candidate)
-                        IF(ineighborg(candidate) > 0) THEN
-                            kmother = candidate
-                            get_replacement = .false.
-                            EXIT replace ! If this candidate is accepted, the search stops
-                        END IF
-                    END DO !end of neighbor loop
-                    this_radius = this_radius + 1
-                    CALL FINDNEIG(this_k,this_radius)
+            ineighbork = ineighbor(this_k)
+                DO i=1,ineighbork
+                    neigspk(i) = neigsp(this_k,i)                    
+                END DO               
+                ! k's neighbors are the first set of candidates
+                !!! Arrange neighbors in a random order
+                DO i=1,ineighbork
+                    random_order(i) = neigspk(i)
+                END DO
+                DO i=ineighbork,1,-1
+                    CALL random_number(random)
+                    shuffle = int(random*(ineighbork-1))+1
+                    shuffled = random_order(i)
+                    random_order(i) = random_order(shuffle)
+                    random_order(shuffle) = shuffled
+                END DO
+                !Sucessively check if each neighbor is a suitable candidate for replacement
+                DO i=1,ineighbork
+                    candidate = random_order(i)
+                    !check if candidate is going to be able to reproduce
+                    !CALL FINDNEIG(candidate, radius)
+                    !CALL FINDGNEIG(candidate)
+                    IF(ineighborg(candidate) > 0) THEN
+                        kmother = candidate
+                        get_replacement = .false.
+                        EXIT replace ! If this candidate is accepted, the search stops
+                    END IF
+                END DO !end of neighbor loop
+                this_radius = this_radius + 1
+                CALL FINDNEIG(this_k,this_radius)
         END DO replace
-
+        CALL FINDNEIG(this_k,radius)
 DEALLOCATE(neigspk,random_order)
 END
 
