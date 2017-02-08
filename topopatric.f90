@@ -77,7 +77,7 @@ CHARACTER*50 filename
 CHARACTER*20 simID,repID
 REAL check_time
 INTEGER(4), ALLOCATABLE :: replica_igt(:), replica_stable(:)
-REAL(8) ecotrait, fitsum
+REAL(8) ecotrait
 
 !!Random seed variables
 INTEGER, DIMENSION(:), ALLOCATABLE :: iseed
@@ -194,6 +194,9 @@ simulation: DO iparameter=1,nsets!change parameters
                 DO i=1,nb
                     CALL random_number(aux)
                     IF(aux > 0.5) g(k,i) = 1
+                    !ecological alleles are also random
+                    CALL random_number(aux)
+                    IF(aux > 0.5) e(k,i) = 1                    
                     !markers are also random
                     CALL random_number(aux)
                     IF(aux > 0.5) markers(k,i) = 1
@@ -272,18 +275,14 @@ simulation: DO iparameter=1,nsets!change parameters
             !Mating
             DO k = 1,nc
                 get_replacement = .false. !initially, we assume that this individual is going to reproduce
+                !write(6,*) 'ln275'
                 kmother = k
                 !CALL FINDNEIG(kmother,radius)
                 !CALL FINDGNEIG(kmother)
                 !There is a random chance (m) that k is going to die and be replaced by the offspring
                 !! of a pair of individuals nearby
-                DO i = 1, ineighbor(k)
-                    fitsum = fitsum + fit(neigsp(k,i))
-                END DO
-                CALL random_number(random) 
-                IF (random < fit(k)) THEN
-                    get_replacement = .true.
-                END IF
+                CALL COMPETITION(k,kmother)
+                !write(6,*) k, ineighbor(k),kmother
                 !Additionally, if k has not enough potential partners, it will also
                 !!!!! need to be replaced
                 IF(ineighborg(kmother) == 0) THEN
@@ -607,6 +606,59 @@ DO i=1,ineighbor(this_k)
 END DO
 
 END
+
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+! Competition                                                  !
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+SUBROUTINE COMPETITION(this_k,kmother)
+USE globals, ONLY:ineighbor,neigsp,fit
+IMPLICIT NONE
+INTEGER(4) i !loop variables
+INTEGER, INTENT(IN) :: this_k
+INTEGER, INTENT(INOUT) :: kmother
+REAL random
+REAL(8) fitsum, accumulated
+INTEGER(4), ALLOCATABLE :: these_id(:)
+REAL(8), ALLOCATABLE :: these_fit(:)
+
+ALLOCATE(these_id(ineighbor(this_k)+1),these_fit(ineighbor(this_k)+1))
+
+!Get the information from k's neighbors
+fitsum = 0.0d0
+DO i = 1, ineighbor(this_k)
+    these_id(i) = neigsp(this_k,i)
+    these_fit(i) = fit(neigsp(this_k,i))
+    fitsum = fitsum + fit(neigsp(this_k,i))
+END DO
+!Include k in the sum and in the lists
+these_id(ineighbor(this_k)+1) = this_k
+these_fit(ineighbor(this_k)+1) = fit(this_k)
+fitsum = fitsum + fit(this_k)
+
+!Normalize fitness locally
+DO i = 1, ineighbor(this_k)+1
+    these_fit(i) = these_fit(i)/fitsum
+END DO
+! write(6,*) 'focal', this_k, ineighbor(this_k)
+! write(6,*) (these_id(i),i=1,ineighbor(this_k)+1)
+! write(6,'(100(1x,f15.3))') (these_fit(i),i=1,ineighbor(this_k)+1)
+!Select individual to reproduce according to fitness
+i = 1
+accumulated = these_fit(i)
+CALL RANDOM_NUMBER(random)
+! write(6,*) i,random, accumulated
+selection: DO WHILE (random > accumulated)
+    i = i + 1
+    accumulated = accumulated + these_fit(i)
+    CALL RANDOM_NUMBER(random)
+!     write(6,*) i, these_id(i), random, accumulated
+    !pause
+END DO selection
+kmother = these_id(i)
+! write(6,*) this_k, i, kmother
+DEALLOCATE(these_id,these_fit)
+END
+
 
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 ! Find substitute for this_ k                                           !
