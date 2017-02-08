@@ -3,7 +3,6 @@
 
 MODULE globals
 !!Loop variables
-INTEGER(4) i,j,k,l,o 
 LOGICAL keep_going
 INTEGER(4), ALLOCATABLE :: id(:)
 
@@ -26,7 +25,11 @@ INTEGER(1), ALLOCATABLE :: markers(:,:)
 !!Space and neighbor variables
 INTEGER(4), ALLOCATABLE :: x(:),y(:)
 INTEGER(4), ALLOCATABLE :: neig(:),neigsp(:),ispecies(:,:)
+INTEGER(4), ALLOCATABLE, SAVE :: worg(:,:,:),nworg(:,:)
+INTEGER(4), ALLOCATABLE, SAVE :: idqx(:),idqy(:)
+INTEGER(4) idensity,idq,nsites
 INTEGER(4)  ineighbor,ineighborg,this_radius
+
 
 !Species detection variables
 INTEGER(4) igt
@@ -34,11 +37,13 @@ INTEGER(4), ALLOCATABLE :: ispv(:)
 INTEGER(4), ALLOCATABLE :: previous_igt(:)
 REAL, ALLOCATABLE:: previous_gdists(:)
 
+
 END MODULE
 
 PROGRAM topopatric
 USE globals
 IMPLICIT NONE
+INTEGER(4) i,j,k,l,o !loop variables
 INTEGER(4) nsets,iparameter
 INTEGER(4) replica,ireplica
 INTEGER(4) kmother,kmate,kcross
@@ -56,7 +61,6 @@ INTEGER(4), ALLOCATABLE :: replica_igt(:), replica_stable(:)
 INTEGER, DIMENSION(:), ALLOCATABLE :: iseed
 INTEGER :: nseed
 
-INTEGER(4) candidate,this_neighbor
 LOGICAL get_replacement
 REAL isum
 
@@ -132,11 +136,19 @@ simulation: DO iparameter=1,nsets!change parameters
         CALL random_seed(put=iseed)
         CALL random_number(aux)
 
+        idensity = 100 !maximum individuals per site
+        !idensity is not intended to be a carrying capacity and is used just to set
+        !!the lenght of the matrix
+        
+        nsites = 3.5*radius**2 !!number of sites in a neighborhood
+        
         !Start a new simulation
         ALLOCATE(id(nc))
         ALLOCATE (g(nc,nb),markers(nc,nb))
         ALLOCATE (goff(nc,nb), moff(nc,nb))
         ALLOCATE(x(nc),y(nc),neig(nc),neigsp(nc))
+        ALLOCATE (worg(nf,nf,idensity),nworg(nf,nf))
+        ALLOCATE (idqx(nsites),idqy(nsites))
         ALLOCATE (ispv(nc),ispecies(nc,nc))
         ALLOCATE(previous_igt(ntime),previous_gdists(ntime))
         ALLOCATE(random_order(nc))
@@ -177,7 +189,36 @@ simulation: DO iparameter=1,nsets!change parameters
             id(k) = k
         END DO
         
-       
+        !Save the information of in which site individuals are located
+        nworg =0 !number of individuals per site
+        worg = 0 !identity of individuals per site
+        DO i=1,nc     
+            nworg(x(i),y(i)) = nworg(x(i),y(i)) + 1
+            IF (nworg(x(i),y(i)) > idensity) THEN
+                WRITE(6,*) 'There too many individuals here! ln196'
+            END IF
+            worg(x(i),y(i),nworg(x(i),y(i))) = i
+        END DO
+        
+        ! Set up template for the locations that are part of the neighborhood for a radius
+        idqx = 0
+        idqy = 0
+        idq = 0
+        DO i=-radius,radius               
+            DO j=-radius,radius      
+                IF(i*i+j*j <= radius**2) THEN !check if site belongs to the neighborhood
+                    idq = idq + 1
+                    idqx(idq) = i
+                    idqy(idq) = j
+                END IF
+            END DO
+         END DO
+        
+!         write(6,*) (idqx(i),i=1,idq)
+!         pause
+!         write(6,*) (idqy(i),i=1,idq)
+!         pause
+        
         !Erase appendable output files       
         filename = 'dist'//trim(simulationID)//'.dat'
         OPEN (unit=22,file=filename,status='unknown')
@@ -197,6 +238,7 @@ simulation: DO iparameter=1,nsets!change parameters
                 get_replacement = .false. !initially, we assume that this individual is going to reproduce
                 kmother = k
                 CALL FINDNEIG(kmother,radius)
+                CALL FINDGNEIG(kmother)
                 !There is a random chance (m) that k is going to die and be replaced by the offspring
                 !! of a pair of individuals nearby
                 CALL random_number(random) 
@@ -208,60 +250,8 @@ simulation: DO iparameter=1,nsets!change parameters
                 IF(ineighborg == 0) THEN
                     get_replacement = .true.
                 END IF
-                this_radius = radius
-                this_neighbor = ineighbor
                 !If necessary, find a candidate to replace k
-                replace: DO WHILE (get_replacement)
-                    ! k's neighbors are the first set of candidates
-                    !!! Arrange neighbors in a random order
-                    DO i=1,ineighbor
-                        random_order(i) = neigsp(i)
-                    END DO
-                    DO i=ineighbor,1,-1
-                        CALL random_number(random)
-                        shuffle = int(random*(ineighbor-1))+1
-                        shuffled = random_order(i)
-                        random_order(i) = random_order(shuffle)
-                        random_order(shuffle) = shuffled
-                    END DO
-                    !Sucessively check if each neighbor is a suitable candidate for replacement
-                    DO i=1,ineighbor
-                        candidate = random_order(i)
-                        !check_ineighborg = 0 !necessary if using mnpm
-                        ix = x(candidate)
-                        iy = y(candidate)
-                        check: DO j = 1,nc !check IF candidate is going to be able to reproduce
-                            IF(candidate == j) cycle check
-                            dista = sqrt(real(min(abs(ix-x(j)), nf - abs(ix-x(j)))**2 + min(abs(iy-y(j)), nf - abs(iy-y(j)))**2))
-                            IF (dista <= radius) THEN
-                                dista = 0
-                                DO l=1,nb
-                                    IF(is_dmi) THEN
-                                        IF (g(candidate,l) + g(j,l) > 0) dista = dista + 1
-                                        IF(dista > rg) EXIT
-                                    ELSE
-                                        dista = dista + abs(g(candidate,l)-g(j,l))
-                                        IF(dista > rg) EXIT
-                                    END IF
-                                END DO
-                                IF(dista <= rg) THEN
-                                    kmother = candidate
-                                    get_replacement = .false.
-                                    EXIT replace ! If this candidate is accepted, the search stops
-                                END IF
-                            END IF
-                        END DO check
-                    END DO !end of neighbor loop
-                                    
-                    !If none of the neighbors is a suitable candidate,
-                    !! increase radius of spatial neighborhood by 1
-                    IF (k==kmother) THEN
-                        this_radius = this_radius + 1
-                        CALL FINDNEIG(k, this_radius)
-                    END IF
-                END DO replace
-                ! If k has been replaced, find neighbors of the new kmother
-                IF (kmother /= k) CALL FINDNEIG(kmother,radius)
+                IF (get_replacement) CALL FINDSUB(k,kmother)
                 IF(ineighborg == 0) THEN
                     WRITE(6,*) 'ineighborg = 0!'
                     WRITE(6,*) 'This should not be possible here (ln408)'
@@ -308,8 +298,8 @@ simulation: DO iparameter=1,nsets!change parameters
                     END IF
             END DO  ! end matings of the season
             
-            ! If generations are discrete, replace parents and disperse
-            !! only after the end of the mating season 
+            ! Generations are discrete. Parents are replaced and offspring
+            !! mutants and disperse only after the end of the mating season 
             DO k=1,nc
                     DO l=1,nb
                         g(k,l) = goff(k,l)
@@ -326,8 +316,8 @@ simulation: DO iparameter=1,nsets!change parameters
                         END IF
                      END DO
                      IF(diff /= 0.0) CALL DISPERSAL(k)
-             END DO
-
+             END DO           
+   
             ! calculate species and other metrics every deltat
             check_time = (float(itime)/float(deltat) - itime/deltat)
             IF (check_time == 0.0) THEN
@@ -375,6 +365,16 @@ simulation: DO iparameter=1,nsets!change parameters
                     END DO
                 END DO
             END IF
+            !Update the information of in which site individuals are located
+            nworg =0 !number of individuals per site
+            worg = 0 !identity of individuals per site
+            DO k=1,nc     
+                nworg(x(k),y(k)) = nworg(x(k),y(k)) + 1
+                IF (nworg(x(k),y(k)) > idensity) THEN
+                    WRITE(6,*) 'There too many individuals here! ln196'
+                END IF
+                worg(x(k),y(k),nworg(x(k),y(k))) = k
+            END DO                   
         END DO looptime ! loop in time
 
         IF (stable /= 0) THEN
@@ -427,6 +427,8 @@ simulation: DO iparameter=1,nsets!change parameters
         DEALLOCATE (g,goff,markers,moff)
         DEALLOCATE(x,y,neig,neigsp)
         DEALLOCATE (ispv,ispecies)
+        DEALLOCATE (worg,nworg)
+        DEALLOCATE (idqx,idqy)        
         DEALLOCATE(previous_igt,previous_gdists)
         DEALLOCATE(iseed)
         DEALLOCATE(random_order)
@@ -450,44 +452,135 @@ CALL ELLAPSED_TIME
 
 END PROGRAM topopatric
 
-!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-! Find spatial and genetic neighbors for kmother                                             !
-!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+! Find spatial neighbors for this_k                                           !
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 SUBROUTINE FINDNEIG(this_k, this_radius)
-USE globals, ONLY: i,nc,l,nb,ineighbor,ineighborg,neig,neigsp,x,y,g,rg,nf,is_dmi
+USE globals, ONLY: nc,nb,ineighbor,neigsp,x,y,nf,idq,idqx,idqy,nworg,worg,radius
 IMPLICIT NONE
+INTEGER(4) i,j,l!loop variables
 INTEGER(4), intent(in) :: this_k, this_radius
-INTEGER(4) dista,ix,iy
+INTEGER(4) dista,ix,iy,thisx,thisy
 
 ineighbor = 0
-ineighborg = 0
-neig = 0   ! genetic neighbors
-neigsp = 0 ! spatial neighbors
+neigsp = 0 ! spatial neighbors 
 ix = x(this_k)
 iy = y(this_k)
-searchpop: DO i = 1,nc
-    IF(this_k == i) cycle searchpop
-    dista = sqrt(REAL(min(abs(ix-x(i)), nf - abs(ix-x(i)))**2 + min(abs(iy-y(i)), nf - abs(iy-y(i)))**2))
-    IF (dista <= this_radius) THEN
-        ineighbor = ineighbor + 1
-        neigsp(ineighbor) = i
-        dista = 0
-        DO l=1,nb
-            IF(is_dmi) THEN
-                IF (g(this_k,l) + g(neigsp(ineighbor),l) > 0) dista = dista + 1
-                IF(dista > rg) EXIT
-            ELSE
-                dista = dista + abs(g(this_k,l)-g(neigsp(ineighbor),l))
-                IF(dista > rg) EXIT
-            END IF
-        END DO
-        IF(dista <= rg) THEN
-            ineighborg = ineighborg + 1
-            neig(ineighborg) = neigsp(ineighbor)
-        END IF
-    END IF
-END DO searchpop
+thisx = 0
+thisy = 0
 
+IF (this_radius > 0.25*nf .OR. this_radius > radius) THEN
+    searchpop: DO i = 1,nc
+        IF(this_k == i) CYCLE searchpop! the focal individual is not included as a neighbor of itself
+        dista = sqrt(REAL(min(abs(ix-x(i)), nf - abs(ix-x(i)))**2 + min(abs(iy-y(i)), nf - abs(iy-y(i)))**2))
+        IF (dista <= this_radius) THEN
+            ineighbor = ineighbor + 1
+            neigsp(ineighbor) = i
+        END IF
+    END DO searchpop
+ELSE
+    loop1: DO i = 1,idq 
+            thisx = ix+idqx(i)
+            thisy = iy+idqy(i)
+            IF (thisx > nf) thisx = thisx - nf
+            IF (thisx < 1) thisx = nf + thisx
+            IF (thisy > nf) thisy = thisy - nf
+            IF (thisy < 1) thisy = nf + thisy
+            loop2: DO j = 1,nworg(thisx,thisy)
+                IF(worg(thisx,thisy,j) /= this_k) THEN ! the focal individual is not included as a neighbor of itself
+                    ineighbor = ineighbor + 1
+                    neigsp(ineighbor) = worg(thisx,thisy,j)
+                END IF
+            END DO loop2
+    END DO loop1
+END IF
+
+END
+
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+! Find genetic neighbors for this_ k                                           !
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+SUBROUTINE FINDGNEIG(this_k)
+USE globals, ONLY: nb,ineighbor,ineighborg,neig,neigsp,g,rg,is_dmi
+IMPLICIT NONE
+INTEGER(4) i,l !loop variables
+INTEGER(4), intent(in) :: this_k
+INTEGER(4) dista
+
+ineighborg = 0
+neig = 0   ! genetic neighbors
+
+DO i=1,ineighbor
+    dista = 0
+    DO l=1,nb
+        IF(is_dmi) THEN
+            IF (g(this_k,l) + g(neigsp(ineighbor),l) > 0) dista = dista + 1
+            IF(dista > rg) EXIT
+        ELSE
+            dista = dista + abs(g(this_k,l)-g(neigsp(ineighbor),l))
+            IF(dista > rg) EXIT
+        END IF
+    END DO
+    IF(dista <= rg) THEN
+        ineighborg = ineighborg + 1
+        neig(ineighborg) = neigsp(i)
+    END IF
+END DO
+
+END
+
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+! Find substitute for this_ k                                           !
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+SUBROUTINE FINDSUB(this_k,kmother)
+USE globals, ONLY: nc,nb,ineighbor,ineighborg,neig,neigsp,g,rg,is_dmi,radius
+IMPLICIT NONE
+INTEGER(4) i,j,l !loop variables
+INTEGER, INTENT(IN) :: this_k
+INTEGER, INTENT(INOUT) :: kmother
+INTEGER(4) ineighbork, this_radius
+INTEGER(4), ALLOCATABLE :: neigspk(:)
+LOGICAL get_replacement
+INTEGER(4) :: shuffle,shuffled
+INTEGER(4), ALLOCATABLE, save :: random_order(:)
+INTEGER(4) candidate
+REAL random
+ALLOCATE(neigspk(nc),random_order(nc))
+
+this_radius = radius
+get_replacement = .true.
+replace: DO WHILE (get_replacement)
+                    ineighbork = ineighbor
+                    neigspk = neigsp                    
+                    ! k's neighbors are the first set of candidates
+                    !!! Arrange neighbors in a random order
+                    DO i=1,ineighbork
+                        random_order(i) = neigspk(i)
+                    END DO
+                    DO i=ineighbork,1,-1
+                        CALL random_number(random)
+                        shuffle = int(random*(ineighbork-1))+1
+                        shuffled = random_order(i)
+                        random_order(i) = random_order(shuffle)
+                        random_order(shuffle) = shuffled
+                    END DO
+                    !Sucessively check if each neighbor is a suitable candidate for replacement
+                    DO i=1,ineighbork
+                        candidate = random_order(i)
+                        !check if candidate is going to be able to reproduce
+                        CALL FINDNEIG(candidate, radius)
+                        CALL FINDGNEIG(candidate)
+                        IF(ineighborg > 0 ) THEN
+                            kmother = candidate
+                            get_replacement = .false.
+                            EXIT replace ! If this candidate is accepted, the search stops
+                        END IF
+                    END DO !end of neighbor loop
+                    this_radius = this_radius + 1
+                    CALL FINDNEIG(this_k,this_radius)
+        END DO replace
+
+DEALLOCATE(neigspk,random_order)
 END
 
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -524,8 +617,9 @@ END
 ! Find species                                  !
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 SUBROUTINE FINDSPECIES
-USE globals, ONLY: i,j,k,l,x,y,nc,rg,g,nb,igt,ispecies,ispv,is_dmi
+USE globals, ONLY: x,y,nc,rg,g,nb,igt,ispecies,ispv,is_dmi
 IMPLICIT NONE
+INTEGER(4) i,j,k,l !loop variables
 INTEGER(4), ALLOCATABLE :: species(:), auxy1(:),auxy2(:)
 INTEGER(4) itot,i1,i2,icr,isp,dista,itest,isp0,ispold,ii,ji,o
 
@@ -556,7 +650,7 @@ DO WHILE (itot < nc)
             IF(dista > rg) THEN
                 i1 = i1 + 1
                 auxy1(i1) = ii      !put creatures with dist > rg into aux1
-                cycle loop1
+                CYCLE loop1
             END IF
         END DO
         isp = isp + 1
@@ -588,7 +682,7 @@ DO WHILE (itot < nc)
                             isp = isp + 1 
                             species(isp) = auxy1(i)   ! colect the aux1 individual
                             itest = 1                 ! indicates that the process has to be repeated
-                            cycle loop2
+                            CYCLE loop2
                         END IF
                     END DO
                     i2 = i2 + 1
@@ -621,8 +715,9 @@ END
 ! Check if number of species is stable          !
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 SUBROUTINE is_stable
-USE globals, ONLY:i,j,k,g,nc,nb,igt,previous_igt,previous_gdists,keep_going,window,stable,deltat,sampled_times
+USE globals, ONLY:g,nc,nb,igt,previous_igt,previous_gdists,keep_going,window,stable,deltat,sampled_times
 IMPLICIT NONE
+INTEGER(4) i,j,k !loop variables
 INTEGER(4) igt_sum,dist,idists
 REAL distsum, gdists_sum,gdists_mean
 REAL igt_mean,check_mean
