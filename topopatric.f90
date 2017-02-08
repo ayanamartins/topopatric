@@ -24,11 +24,11 @@ INTEGER(1), ALLOCATABLE :: markers(:,:)
 
 !!Space and neighbor variables
 INTEGER(4), ALLOCATABLE :: x(:),y(:)
-INTEGER(4), ALLOCATABLE :: neig(:),neigsp(:),ispecies(:,:)
+INTEGER(4), ALLOCATABLE :: neig(:,:),neigsp(:,:),ispecies(:,:)
 INTEGER(4), ALLOCATABLE, SAVE :: worg(:,:,:),nworg(:,:)
 INTEGER(4), ALLOCATABLE, SAVE :: idqx(:),idqy(:)
-INTEGER(4) idensity,idq,nsites
-INTEGER(4)  ineighbor,ineighborg,this_radius
+INTEGER(4) idensity,idq,nsites,this_radius
+INTEGER(4), ALLOCATABLE, SAVE :: ineighbor(:), ineighborg(:)
 
 
 !Species detection variables
@@ -143,16 +143,18 @@ simulation: DO iparameter=1,nsets!change parameters
         nsites = 3.5*radius**2 !!number of sites in a neighborhood
         
         !Start a new simulation
-        ALLOCATE(id(nc))
+        ALLOCATE (id(nc))
         ALLOCATE (g(nc,nb),markers(nc,nb))
         ALLOCATE (goff(nc,nb), moff(nc,nb))
-        ALLOCATE(x(nc),y(nc),neig(nc),neigsp(nc))
+        ALLOCATE (x(nc),y(nc))
+        ALLOCATE (neig(nc,nc),neigsp(nc,nc))
+        ALLOCATE (ineighbor(nc), ineighborg(nc))
         ALLOCATE (worg(nf,nf,idensity),nworg(nf,nf))
         ALLOCATE (idqx(nsites),idqy(nsites))
         ALLOCATE (ispv(nc),ispecies(nc,nc))
-        ALLOCATE(previous_igt(ntime),previous_gdists(ntime))
-        ALLOCATE(random_order(nc))
-        ALLOCATE(auxx(nc),auxy(nc),auxg(nc,nb),auxm(nc,nb))
+        ALLOCATE (previous_igt(ntime),previous_gdists(ntime))
+        ALLOCATE (random_order(nc))
+        ALLOCATE (auxx(nc),auxy(nc),auxg(nc,nb),auxm(nc,nb))
         
         !Set initial conditions of genotypes
         g = 0
@@ -213,12 +215,7 @@ simulation: DO iparameter=1,nsets!change parameters
                 END IF
             END DO
          END DO
-        
-!         write(6,*) (idqx(i),i=1,idq)
-!         pause
-!         write(6,*) (idqy(i),i=1,idq)
-!         pause
-        
+             
         !Erase appendable output files       
         filename = 'dist'//trim(simulationID)//'.dat'
         OPEN (unit=22,file=filename,status='unknown')
@@ -247,18 +244,18 @@ simulation: DO iparameter=1,nsets!change parameters
                 END IF
                 !Additionally, if k has not enough potential partners, it will also
                 !!!!! need to be replaced
-                IF(ineighborg == 0) THEN
+                IF(ineighborg(kmother) == 0) THEN
                     get_replacement = .true.
                 END IF
                 !If necessary, find a candidate to replace k
                 IF (get_replacement) CALL FINDSUB(k,kmother)
-                IF(ineighborg == 0) THEN
+                IF(ineighborg(kmother) == 0) THEN
                     WRITE(6,*) 'ineighborg = 0!'
                     WRITE(6,*) 'This should not be possible here (ln408)'
                     EXIT simulation
                 END IF
                     CALL random_number(aux)
-                    kmate = neig(int(aux*ineighborg)+1)    ! get a kmate /= kmother
+                    kmate = neig(kmother,int(aux*ineighborg(kmother))+1)    ! get a kmate /= kmother
                     IF(independent_loci) THEN
                         DO l=1,nb
                             CALL random_number(aux)
@@ -423,16 +420,17 @@ simulation: DO iparameter=1,nsets!change parameters
             WRITE(10,*) iseed
         CLOSE(10)
 
-        DEALLOCATE(id)
+        DEALLOCATE (id)
         DEALLOCATE (g,goff,markers,moff)
-        DEALLOCATE(x,y,neig,neigsp)
+        DEALLOCATE (x,y,neig,neigsp)
+        DEALLOCATE (ineighbor,ineighborg)
         DEALLOCATE (ispv,ispecies)
         DEALLOCATE (worg,nworg)
         DEALLOCATE (idqx,idqy)        
-        DEALLOCATE(previous_igt,previous_gdists)
-        DEALLOCATE(iseed)
-        DEALLOCATE(random_order)
-        DEALLOCATE(auxx,auxy,auxg,auxm)
+        DEALLOCATE (previous_igt,previous_gdists)
+        DEALLOCATE (iseed)
+        DEALLOCATE (random_order)
+        DEALLOCATE (auxx,auxy,auxg,auxm)
     END DO !replica
 
     OPEN (unit=18,file='summary_replica.dat',status='unknown', position='append')
@@ -462,8 +460,10 @@ INTEGER(4) i,j,l!loop variables
 INTEGER(4), intent(in) :: this_k, this_radius
 INTEGER(4) dista,ix,iy,thisx,thisy
 
-ineighbor = 0
-neigsp = 0 ! spatial neighbors 
+DO i=1,ineighbor(this_k)
+    neigsp(this_k,ineighbor) = 0
+END DO
+ineighbor(this_k) = 0
 ix = x(this_k)
 iy = y(this_k)
 thisx = 0
@@ -474,8 +474,8 @@ IF (this_radius > 0.25*nf .OR. this_radius > radius) THEN
         IF(this_k == i) CYCLE searchpop! the focal individual is not included as a neighbor of itself
         dista = sqrt(REAL(min(abs(ix-x(i)), nf - abs(ix-x(i)))**2 + min(abs(iy-y(i)), nf - abs(iy-y(i)))**2))
         IF (dista <= this_radius) THEN
-            ineighbor = ineighbor + 1
-            neigsp(ineighbor) = i
+            ineighbor(this_k) =  ineighbor(this_k) + 1
+            neigsp(this_k,ineighbor(this_k)) = i
         END IF
     END DO searchpop
 ELSE
@@ -488,8 +488,8 @@ ELSE
             IF (thisy < 1) thisy = nf + thisy
             loop2: DO j = 1,nworg(thisx,thisy)
                 IF(worg(thisx,thisy,j) /= this_k) THEN ! the focal individual is not included as a neighbor of itself
-                    ineighbor = ineighbor + 1
-                    neigsp(ineighbor) = worg(thisx,thisy,j)
+                    ineighbor(this_k) =  ineighbor(this_k) + 1
+                    neigsp(this_k,ineighbor) = worg(thisx,thisy,j)
                 END IF
             END DO loop2
     END DO loop1
@@ -507,23 +507,25 @@ INTEGER(4) i,l !loop variables
 INTEGER(4), intent(in) :: this_k
 INTEGER(4) dista
 
-ineighborg = 0
-neig = 0   ! genetic neighbors
+DO i=1,ineighborg(this_k)
+    neig(this_k,ineighborg) = 0
+END DO
+ineighborg(this_k) = 0
 
-DO i=1,ineighbor
+DO i=1,ineighbor(this_k)
     dista = 0
     DO l=1,nb
         IF(is_dmi) THEN
-            IF (g(this_k,l) + g(neigsp(ineighbor),l) > 0) dista = dista + 1
+            IF (g(this_k,l) + g(neigsp(this_k,ineighbor(this_k)),l) > 0) dista = dista + 1
             IF(dista > rg) EXIT
         ELSE
-            dista = dista + abs(g(this_k,l)-g(neigsp(ineighbor),l))
+            dista = dista + abs(g(this_k,l)-g(neigsp(this_k,ineighbor(this_k)),l))
             IF(dista > rg) EXIT
         END IF
     END DO
     IF(dista <= rg) THEN
-        ineighborg = ineighborg + 1
-        neig(ineighborg) = neigsp(i)
+        ineighborg(this_k) = ineighborg(this_k) + 1
+        neig(this_k,ineighborg) = neigsp(this_k,i)
     END IF
 END DO
 
@@ -550,8 +552,10 @@ ALLOCATE(neigspk(nc),random_order(nc))
 this_radius = radius
 get_replacement = .true.
 replace: DO WHILE (get_replacement)
-                    ineighbork = ineighbor
-                    neigspk = neigsp                    
+                    ineighbork = ineighbor(this_k)
+                    DO i=1,ineighbork
+                        neigspk(i) = neigsp(this_k,i)                    
+                    END DO               
                     ! k's neighbors are the first set of candidates
                     !!! Arrange neighbors in a random order
                     DO i=1,ineighbork
@@ -570,7 +574,7 @@ replace: DO WHILE (get_replacement)
                         !check if candidate is going to be able to reproduce
                         CALL FINDNEIG(candidate, radius)
                         CALL FINDGNEIG(candidate)
-                        IF(ineighborg > 0 ) THEN
+                        IF(ineighborg(candidate) > 0) THEN
                             kmother = candidate
                             get_replacement = .false.
                             EXIT replace ! If this candidate is accepted, the search stops
